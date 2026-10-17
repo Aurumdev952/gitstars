@@ -29,8 +29,8 @@ export function MacroLabels({ galaxy }: { galaxy: GalaxyIndex }) {
     () =>
       galaxy.galaxies.map((g) => {
         const [r, gg, b] = g.color.linear
-        // Lift toward white so the label reads over its own stars, keeping a trace of the hue.
-        const color = new Color().setRGB(0.55 + r * 0.45, 0.55 + gg * 0.45, 0.55 + b * 0.45, LinearSRGBColorSpace)
+        // Mostly white with a trace of the galaxy hue; drawn after post-processing, so no bloom.
+        const color = new Color().setRGB(0.62 + r * 0.38, 0.62 + gg * 0.38, 0.62 + b * 0.38, LinearSRGBColorSpace)
         return { id: g.id, name: g.name.toUpperCase(), color, center: new Vector3(...g.centroid), radius: g.radius }
       }),
     [galaxy],
@@ -82,10 +82,10 @@ export function MacroLabels({ galaxy }: { galaxy: GalaxyIndex }) {
       const anchorDist = Math.max(1, dist)
       group.position.copy(item.center).addScaledVector(up, offsetPx * worldPerPx * anchorDist)
       group.scale.setScalar(anchorDist * worldPerPx * px)
-      const emphasis = hoveredCluster === null ? 0.82 : hoveredCluster === item.id ? 1 : 0.4
+      const emphasis = hoveredCluster === null ? 0.86 : hoveredCluster === item.id ? 1 : 0.4
       const crowded = visible && chosen === null ? 0.15 : 1
       text.fillOpacity = fade * emphasis * crowded
-      text.outlineOpacity = fade * emphasis * crowded * 0.85
+      text.outlineOpacity = fade * emphasis * crowded * 0.75
     }
   })
 
@@ -102,12 +102,10 @@ export function MacroLabels({ galaxy }: { galaxy: GalaxyIndex }) {
             anchorX="center"
             anchorY="bottom"
             color={item.color}
-            outlineWidth="6%"
+            outlineWidth="12%"
             outlineColor={sceneTheme.label.outline}
-            outlineBlur="12%"
+            outlineBlur="40%"
             renderOrder={20}
-            material-depthTest={false}
-            material-toneMapped={false}
           >
             {item.name}
           </Text>

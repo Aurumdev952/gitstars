@@ -72,7 +72,7 @@ function RepoDetails({ g, i }: { g: GalaxyIndex; i: number }) {
         </button>
       </div>
 
-      <div ref={body} className="min-h-0 flex-1 overflow-y-auto px-6 pb-6">
+      <div ref={body} className="scrollbar-thin min-h-0 flex-1 overflow-y-auto px-6 pb-6">
         <h2 ref={heading} tabIndex={-1} className="mt-3 text-[23px] leading-tight font-semibold tracking-[-0.02em] outline-none">
           <span className="font-normal text-ink-faint">{owner}/</span>
           <wbr />

@@ -25,7 +25,7 @@ export function Legend() {
       onPointerLeave={() => hoverCluster(null)}
     >
       <h2 className="px-2.5 pb-1.5 text-[11.5px] font-medium text-ink-faint">Galaxies</h2>
-      <ul className="max-h-[42vh] overflow-y-auto">
+      <ul className="scrollbar-thin max-h-[42vh] overflow-y-auto">
         {g.galaxies.map((c) => {
           const active = focusedGalaxy === c.id
           return (

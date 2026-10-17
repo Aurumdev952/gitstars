@@ -8,7 +8,8 @@ export const sceneTheme = {
   },
   fog: { near: 220, far: 900, color: [0.012, 0.012, 0.03] as const },
   stars: { sizeScale: 1.9, minPx: 2.6, maxPx: 56 },
-  bloom: { threshold: 0.62, smoothing: 0.25, intensity: 0.95, radius: 0.72, levels: 7 },
+  // Threshold sits above label and halo luminance so only HDR star cores bloom.
+  bloom: { threshold: 0.9, smoothing: 0.2, intensity: 1.1, radius: 0.72, levels: 7 },
   vignette: { offset: 0.3, darkness: 0.7 },
   noise: 0.025,
   label: { outline: '#05050d', macroPx: 14 },

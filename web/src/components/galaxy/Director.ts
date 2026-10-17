@@ -44,7 +44,7 @@ export const director = {
     const g = useGalaxyStore.getState().galaxy
     if (!c || !g) return
     const { alive, end } = begin()
-    const sphere = boundingSphere(g.repos.keys(), 0.9, 20, 0.99)
+    const sphere = boundingSphere(g.repos.keys(), 1, 20, 0.99)
     if (!sphere) return end()
     await Promise.all([c.rotateTo(HOME_AZIMUTH, HOME_POLAR, animate), c.fitToSphere(sphere, animate)])
     if (alive()) end()

@@ -1,5 +1,6 @@
 import { useEffect, useRef } from 'react'
 import { useFrame, useThree } from '@react-three/fiber'
+import type { Scene } from 'three'
 import { useGalaxyStore } from '#/state/store'
 import { director } from './Director'
 import { sceneBus, starScreenPosition } from './sceneBus'
@@ -18,6 +19,7 @@ type DebugApi = {
   measureFps(ms?: number): Promise<{ fps: number; frames: number; drawCalls: number }>
   director: typeof director
   bus: typeof sceneBus
+  scene: Scene
 }
 
 declare global {
@@ -29,6 +31,7 @@ declare global {
 /** Installs window.__gitstars; mounted inside the Canvas only when ?debug is set. */
 export function DebugHooks() {
   const gl = useThree((s) => s.gl)
+  const scene = useThree((s) => s.scene)
   const invalidate = useThree((s) => s.invalidate)
   const frames = useRef({ count: 0, ema: 0 })
 
@@ -72,15 +75,16 @@ export function DebugHooks() {
       },
       director,
       bus: sceneBus,
+      scene,
     }
     window.__gitstars = api
     return () => {
       gl.info.autoReset = true
       delete window.__gitstars
     }
-  }, [gl, invalidate])
+  }, [gl, scene, invalidate])
 
-  // Runs after the composer (priority 1), so info covers every pass of the frame.
+  // Runs after the composer (1) and the overlay (2), so info covers every pass of the frame.
   useFrame((_, dt) => {
     const api = window.__gitstars
     frames.current.count++
@@ -92,7 +96,7 @@ export function DebugHooks() {
       api.ready = useGalaxyStore.getState().galaxy !== null && frames.current.count > 2 && !useGalaxyStore.getState().cameraBusy
     }
     gl.info.reset()
-  }, 2)
+  }, 3)
 
   return null
 }

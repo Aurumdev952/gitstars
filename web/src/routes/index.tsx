@@ -10,6 +10,8 @@ import { bindNavigate, searchDefaults, searchSchema } from '#/state/url'
 export const Route = createFileRoute('/')({
   validateSearch: searchSchema,
   search: { middlewares: [stripSearchParams(searchDefaults)] },
+  // The galaxy is fetched from static files by the browser; a server-side loader has no origin.
+  ssr: false,
   loaderDeps: ({ search }) => ({ data: search.data }),
   loader: ({ deps }) => {
     const source = resolveDataSource(deps.data ?? import.meta.env.VITE_DATA)

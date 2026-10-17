@@ -9,6 +9,7 @@ import { Dust } from './Dust'
 import { Effects } from './Effects'
 import { MacroLabels } from './labels/MacroLabels'
 import { Nebulae } from './Nebulae'
+import { OverlayLayer } from './OverlayLayer'
 import { PointerPicker } from './PointerPicker'
 import { SceneDriver } from './SceneDriver'
 import { Stars } from './Stars'
@@ -32,13 +33,15 @@ export function GalaxyCanvas({ debug }: { debug: boolean }) {
       <Dust center={galaxy.center} />
       <Nebulae galaxy={galaxy} />
       <Stars galaxy={galaxy} />
-      <Suspense fallback={null}>
-        <MacroLabels galaxy={galaxy} />
-      </Suspense>
       <Animator />
       <CameraRig />
       <PointerPicker />
       <Effects />
+      <OverlayLayer>
+        <Suspense fallback={null}>
+          <MacroLabels galaxy={galaxy} />
+        </Suspense>
+      </OverlayLayer>
       {debug && <DebugHooks />}
     </Canvas>
   )
