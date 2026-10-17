@@ -26,8 +26,9 @@ void main() {
   }
   if (r > 1.0 && spikes < 0.002) discard;
 
-  // The core keeps at least ~1 px of width so distant stars stay crisp points instead of vanishing.
-  float sigma = max(0.9 / vPx, 0.085) * (1.0 + 4.0 * vCoc);
+  // The core stays between ~1 and ~2.4 px wide: far stars stay crisp points instead of vanishing,
+  // and close ones stay pinpoints in a halo instead of growing into white discs.
+  float sigma = clamp(0.085 * vPx, 0.9, 2.4) / vPx * (1.0 + 4.0 * vCoc);
   float core = exp(-(r * r) / (sigma * sigma)) * 3.0 / (1.0 + 10.0 * vCoc * vCoc);
   float halo = 0.12 / (r * r * 40.0 + 1.0) * smoothstep(1.0, 0.7, r) * vHalo;
   float disc = vCoc * 0.18 * smoothstep(1.0, 0.85, r);
@@ -39,7 +40,7 @@ void main() {
   }
 
   float glow = 0.022 * exp(-r * r * 9.0) * vHalo;
-  vec3 coreColor = mix(vColor, vec3(1.0), 0.55);
+  vec3 coreColor = mix(vColor, vec3(1.0), 0.5);
   vec3 col = coreColor * core + vColor * (halo * 3.6 + glow * 3.0 + disc + spikes) + STARLIGHT * ring;
   gl_FragColor = vec4(col * vIntensity, 1.0);
 }

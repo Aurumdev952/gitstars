@@ -1,7 +1,7 @@
 import { HoverTooltip } from './HoverTooltip'
 import { Legend } from './Legend'
 import { RepoPanel } from './RepoPanel'
-import { SelectionReticle } from './SelectionReticle'
+import { StarReticle } from './StarReticle'
 import { TopBar } from './TopBar'
 
 export function Hud({ dataName }: { dataName: string }) {
@@ -9,7 +9,8 @@ export function Hud({ dataName }: { dataName: string }) {
     <>
       <TopBar dataName={dataName} />
       <Legend />
-      <SelectionReticle />
+      <StarReticle variant="hovered" />
+      <StarReticle variant="selected" />
       <HoverTooltip />
       <RepoPanel />
     </>

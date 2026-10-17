@@ -5,6 +5,7 @@ import { Color, LinearSRGBColorSpace, Vector3, type Group, type PerspectiveCamer
 import type { GalaxyIndex } from '#/lib/load'
 import { sceneTheme } from '#/lib/theme'
 import { useGalaxyStore } from '#/state/store'
+import { starScreenPosition } from '../sceneBus'
 
 export const LABEL_FONT = '/fonts/Geist-Medium.woff'
 const CHARACTERS = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789&-.,:/+ \'’'
@@ -19,6 +20,7 @@ type Rect = { x0: number; y0: number; x1: number; y1: number }
 const overlaps = (a: Rect, b: Rect) => a.x0 < b.x1 && b.x0 < a.x1 && a.y0 < b.y1 && b.y0 < a.y1
 // Vertical nudges, in label heights, tried in order when a label would collide with a nearer one.
 const NUDGES = [0, -1.15, 1.15, -2.3, 2.3]
+const RETICLE = 24
 
 /**
  * One label per galaxy at its centre, held at a constant screen size, faded once the camera is
@@ -48,7 +50,14 @@ export function MacroLabels({ galaxy }: { galaxy: GalaxyIndex }) {
     const hoveredCluster = useGalaxyStore.getState().hoveredCluster
     up.set(0, 1, 0).applyQuaternion(cam.quaternion)
     const order = items.map((_, k) => k).sort((a, b) => cam.position.distanceTo(items[a]!.center) - cam.position.distanceTo(items[b]!.center))
+    // The selected and hovered stars' reticles claim their space first, so no label covers them.
+    const s = useGalaxyStore.getState()
     const placed: Rect[] = []
+    for (const i of [s.selected, s.hovered]) {
+      if (i === null) continue
+      const p = starScreenPosition(galaxy, i)
+      if (p) placed.push({ x0: p.x - RETICLE, x1: p.x + RETICLE, y0: p.y - RETICLE, y1: p.y + RETICLE })
+    }
     for (const k of order) {
       const item = items[k]!
       const group = groups.current[k]
@@ -64,7 +73,9 @@ export function MacroLabels({ galaxy }: { galaxy: GalaxyIndex }) {
       const sy = (0.5 - tmp.y * 0.5) * size.height
       const rectAt = (n: number): Rect => ({ x0: sx - w / 2 - 6, x1: sx + w / 2 + 6, y0: sy - h * (1 + n), y1: sy - h * n })
       const prev = nudge.current[k] ?? 0
-      const visible = fade > 0.05 && tmp.z < 1
+      // A label cut by the viewport edge reads as a glitch; hide it until it fits.
+      const onScreen = sx - w / 2 > 8 && sx + w / 2 < size.width - 8 && sy > h && sy < size.height - 8
+      const visible = fade > 0.05 && tmp.z < 1 && onScreen
       let chosen: number | null = null
       if (visible) {
         for (const n of [prev, ...NUDGES]) {
@@ -83,7 +94,7 @@ export function MacroLabels({ galaxy }: { galaxy: GalaxyIndex }) {
       group.position.copy(item.center).addScaledVector(up, offsetPx * worldPerPx * anchorDist)
       group.scale.setScalar(anchorDist * worldPerPx * px)
       const emphasis = hoveredCluster === null ? 0.86 : hoveredCluster === item.id ? 1 : 0.4
-      const crowded = visible && chosen === null ? 0.15 : 1
+      const crowded = !onScreen ? 0 : visible && chosen === null ? 0.15 : 1
       text.fillOpacity = fade * emphasis * crowded
       text.outlineOpacity = fade * emphasis * crowded * 0.75
     }
