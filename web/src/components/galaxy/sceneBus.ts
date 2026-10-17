@@ -18,6 +18,8 @@ export const sceneBus = {
   dyn: new Float32Array(0),
   dynTarget: new Float32Array(0),
   dynAttr: null as InstancedBufferAttribute | null,
+  /** Bumped each time Stars publishes new aDyn buffers. */
+  dynVersion: 0,
   controls: null as CameraControlsImpl | null,
   camera: null as PerspectiveCamera | null,
   gl: null as WebGLRenderer | null,
@@ -27,15 +29,6 @@ export const sceneBus = {
   frameHooks: new Set<FrameHook>(),
   /** Screen rects of HUD panels (viewport coordinates) that 3D labels keep clear of. */
   occluders: new Set<() => DOMRect | null>(),
-}
-
-export function allocateDyn(n: number) {
-  sceneBus.dyn = new Float32Array(n * 4)
-  sceneBus.dynTarget = new Float32Array(n * 4)
-  for (let i = 0; i < n; i++) {
-    sceneBus.dyn.set([1, 0, 1, 0], i * 4)
-    sceneBus.dynTarget.set([1, 0, 1, 0], i * 4)
-  }
 }
 
 export function currentLayout(): LayoutUniforms {

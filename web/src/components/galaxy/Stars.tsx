@@ -1,4 +1,4 @@
-import { useEffect, useMemo } from 'react'
+import { useEffect, useLayoutEffect, useMemo } from 'react'
 import {
   AdditiveBlending,
   BufferAttribute,
@@ -9,12 +9,19 @@ import {
 } from 'three'
 import type { GalaxyIndex } from '#/lib/load'
 import { shaders } from '#/shaders'
-import { allocateDyn, sceneBus } from './sceneBus'
+import { sceneBus } from './sceneBus'
 
 const QUAD = new Float32Array([-1, -1, 0, 1, -1, 0, 1, 1, 0, -1, 1, 0])
 const QUAD_INDEX = [0, 1, 2, 0, 2, 3]
 
-function buildStarGeometry(g: GalaxyIndex) {
+function restingDyn(n: number) {
+  const a = new Float32Array(n * 4)
+  for (let i = 0; i < n; i++) a.set([1, 0, 1, 0], i * 4)
+  return a
+}
+
+/** Pure, so StrictMode's double-invoked memo cannot leave sceneBus pointing at a discarded copy. */
+function buildStarBuffers(g: GalaxyIndex) {
   const geo = new InstancedBufferGeometry()
   geo.setAttribute('position', new BufferAttribute(QUAD, 3))
   geo.setIndex(QUAD_INDEX)
@@ -30,15 +37,15 @@ function buildStarGeometry(g: GalaxyIndex) {
   geo.setAttribute('aStarred', inst(a.starred, 1))
   geo.setAttribute('aMeta', inst(a.meta, 4))
   geo.setAttribute('aDensity', inst(a.density, 1))
-  allocateDyn(g.n)
-  const dyn = inst(sceneBus.dyn, 4).setUsage(DynamicDrawUsage)
-  geo.setAttribute('aDyn', dyn)
-  sceneBus.dynAttr = dyn
-  return geo
+  const dyn = restingDyn(g.n)
+  const dynAttr = inst(dyn, 4).setUsage(DynamicDrawUsage)
+  geo.setAttribute('aDyn', dynAttr)
+  return { geometry: geo, dyn, dynTarget: restingDyn(g.n), dynAttr }
 }
 
 export function Stars({ galaxy }: { galaxy: GalaxyIndex }) {
-  const geometry = useMemo(() => buildStarGeometry(galaxy), [galaxy])
+  const buffers = useMemo(() => buildStarBuffers(galaxy), [galaxy])
+  const { geometry } = buffers
   const material = useMemo(
     () =>
       new ShaderMaterial({
@@ -51,7 +58,17 @@ export function Stars({ galaxy }: { galaxy: GalaxyIndex }) {
       }),
     [],
   )
-  useEffect(() => () => geometry.dispose(), [geometry])
+  useLayoutEffect(() => {
+    sceneBus.dyn = buffers.dyn
+    sceneBus.dynTarget = buffers.dynTarget
+    sceneBus.dynAttr = buffers.dynAttr
+    sceneBus.dynVersion++
+    sceneBus.invalidate()
+    return () => {
+      if (sceneBus.dynAttr === buffers.dynAttr) sceneBus.dynAttr = null
+      buffers.geometry.dispose()
+    }
+  }, [buffers])
   useEffect(() => () => material.dispose(), [material])
   return <mesh geometry={geometry} material={material} frustumCulled={false} raycast={() => null} renderOrder={10} />
 }
