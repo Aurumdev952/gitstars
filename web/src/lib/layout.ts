@@ -61,6 +61,24 @@ export function bornAt(a: LayoutAttributes, i: number, u: LayoutUniforms): numbe
   return smoothstep(a.starred[i]!, a.starred[i]! + u.birthWindow, u.timeline)
 }
 
+export type StarSizeUniforms = { sizeScale: number; minPx: number; maxPx: number }
+
+/** Sprite radius in CSS pixels; mirrors the pixel-size block of star.vert.glsl. */
+export function starPixelRadius(
+  size: number,
+  highlight: number,
+  vis: number,
+  born: number,
+  viewDist: number,
+  projYY: number,
+  viewportHeightCss: number,
+  s: StarSizeUniforms,
+): number {
+  const world = s.sizeScale * (0.6 + 1.8 * size) * (1 + 0.6 * highlight) * vis * born
+  const px = (world * projYY * 0.5 * viewportHeightCss) / Math.max(0.001, viewDist)
+  return Math.min(s.maxPx, Math.max(s.minPx * vis * born, px))
+}
+
 const clamp01 = (v: number) => (v < 0 ? 0 : v > 1 ? 1 : v)
 
 export function smoothstep(e0: number, e1: number, x: number) {
