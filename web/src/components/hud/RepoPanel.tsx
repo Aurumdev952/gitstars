@@ -6,16 +6,20 @@ import type { GalaxyIndex } from '#/lib/load'
 import { formatAgo, formatCompact, formatMonthYear, splitFullName } from '#/lib/format'
 import { cn } from '#/lib/utils'
 import { ClusterDot } from './Legend'
+import { useOccluder } from './useOccluder'
 
 export function RepoPanel() {
   const selected = useGalaxyStore((s) => s.selected)
   const g = useGalaxyStore((s) => s.galaxy)
   const frozen = useGalaxyStore((s) => s.frozen)
+  const panel = useRef<HTMLElement>(null)
+  useOccluder(panel)
   return (
     <AnimatePresence>
       {g && selected !== null && (
         <motion.aside
           key="repo-panel"
+          ref={panel}
           aria-label="Repository details"
           initial={frozen ? false : { opacity: 0, x: 24 }}
           animate={{ opacity: 1, x: 0, transition: { delay: 0.15, duration: 0.32, ease: [0.22, 1, 0.36, 1] } }}

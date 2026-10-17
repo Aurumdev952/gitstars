@@ -5,7 +5,7 @@ import { Color, LinearSRGBColorSpace, Vector3, type Group, type PerspectiveCamer
 import type { GalaxyIndex } from '#/lib/load'
 import { sceneTheme } from '#/lib/theme'
 import { useGalaxyStore } from '#/state/store'
-import { starScreenPosition } from '../sceneBus'
+import { sceneBus, starScreenPosition } from '../sceneBus'
 
 const LABEL_FONT = '/fonts/Geist-Medium.woff'
 const CHARACTERS = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789&-.,:/+ \'’'
@@ -50,12 +50,16 @@ export function MacroLabels({ galaxy }: { galaxy: GalaxyIndex }) {
     up.set(0, 1, 0).applyQuaternion(cam.quaternion)
     const s = useGalaxyStore.getState()
     const order = items.map((_, k) => k).sort((a, b) => cam.position.distanceTo(items[a]!.center) - cam.position.distanceTo(items[b]!.center))
-    // The selected and hovered stars' reticles claim their space first, so no label covers them.
+    // Reticles and HUD panels claim their space first, so no label covers or hides under them.
     const placed: Rect[] = []
     for (const i of [s.selected, s.hovered]) {
       if (i === null) continue
       const p = starScreenPosition(galaxy, i)
       if (p) placed.push({ x0: p.x - RETICLE, x1: p.x + RETICLE, y0: p.y - RETICLE, y1: p.y + RETICLE })
+    }
+    for (const read of sceneBus.occluders) {
+      const r = read()
+      if (r) placed.push({ x0: r.left, x1: r.right, y0: r.top, y1: r.bottom })
     }
     for (const k of order) {
       const item = items[k]!

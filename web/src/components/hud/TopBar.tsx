@@ -1,5 +1,7 @@
+import { useRef } from 'react'
 import { useGalaxyStore } from '#/state/store'
 import { formatCount } from '#/lib/format'
+import { useOccluder } from './useOccluder'
 
 export function StarMark({ className = '' }: { className?: string }) {
   return (
@@ -12,6 +14,8 @@ export function StarMark({ className = '' }: { className?: string }) {
 
 export function TopBar({ dataName }: { dataName: string }) {
   const g = useGalaxyStore((s) => s.galaxy)
+  const ref = useRef<HTMLElement>(null)
+  useOccluder(ref)
   if (!g) return null
   const { counts } = g.data.meta
   const stats = [
@@ -20,7 +24,7 @@ export function TopBar({ dataName }: { dataName: string }) {
     [counts.systems, counts.systems === 1 ? 'system' : 'systems'],
   ] as const
   return (
-    <header className="pointer-events-none fixed top-0 left-0 z-10 px-6 pt-5 select-none">
+    <header ref={ref} className="pointer-events-none fixed top-0 left-0 z-10 px-6 pt-5 select-none">
       <h1 className="flex items-center gap-2.5 text-[19px] font-medium tracking-[-0.01em] text-ink [text-shadow:0_1px_12px_rgb(0_0_0/0.8)]">
         <StarMark className="size-[18px] text-starlight drop-shadow-[0_0_6px_oklch(0.86_0.12_85/0.7)]" />
         gitstars

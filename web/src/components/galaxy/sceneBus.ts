@@ -25,6 +25,8 @@ export const sceneBus = {
   invalidate: () => {},
   /** Called once per rendered frame after the camera updates; DOM anchors write their transforms here. */
   frameHooks: new Set<FrameHook>(),
+  /** Screen rects of HUD panels (viewport coordinates) that 3D labels keep clear of. */
+  occluders: new Set<() => DOMRect | null>(),
 }
 
 export function allocateDyn(n: number) {

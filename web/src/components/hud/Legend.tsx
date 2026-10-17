@@ -1,5 +1,7 @@
+import { useRef } from 'react'
 import { useGalaxyStore } from '#/state/store'
 import { cn } from '#/lib/utils'
+import { useOccluder } from './useOccluder'
 
 export function ClusterDot({ color, className }: { color: string; className?: string }) {
   return (
@@ -16,10 +18,13 @@ export function Legend() {
   const g = useGalaxyStore((s) => s.galaxy)
   const focusCluster = useGalaxyStore((s) => s.focusCluster)
   const { hoverCluster, focus } = useGalaxyStore((s) => s.actions)
+  const ref = useRef<HTMLElement>(null)
+  useOccluder(ref)
   if (!g) return null
   const focusedGalaxy = focusCluster?.slice(0, 3) ?? null
   return (
     <nav
+      ref={ref}
       aria-label="Galaxies"
       className="glass fixed bottom-5 left-5 z-10 w-[248px] rounded-[var(--radius-panel)] px-2 py-2.5"
       onPointerLeave={() => hoverCluster(null)}
