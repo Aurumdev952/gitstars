@@ -52,6 +52,14 @@ describe('pickStar', () => {
     expect(pickStar({ ...base, projector, x: p.x + 2, y: p.y - 2 })).toBe(1)
   })
 
+  it('agrees between the resting fast path and the general layout path', () => {
+    const layout = { ...RESTING_LAYOUT, timelineOn: true, timeline: 1, birthWindow: 0.01 }
+    for (let i = 0; i < 3; i++) {
+      const p = at(i)
+      expect(pickStar({ ...base, layout, projector, x: p.x + 1, y: p.y })).toBe(pickStar({ ...base, projector, x: p.x + 1, y: p.y }))
+    }
+  })
+
   it('returns null over empty space', () => {
     expect(pickStar({ ...base, projector, x: 20, y: 20 })).toBeNull()
   })

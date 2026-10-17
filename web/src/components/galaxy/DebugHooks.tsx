@@ -3,6 +3,7 @@ import { useFrame, useThree } from '@react-three/fiber'
 import type { Scene } from 'three'
 import { useGalaxyStore } from '#/state/store'
 import { director } from './Director'
+import { pickAt } from './PointerPicker'
 import { sceneBus, starScreenPosition } from './sceneBus'
 
 type DebugApi = {
@@ -13,6 +14,8 @@ type DebugApi = {
   triangles: number
   screenPos(fullName: string): { x: number; y: number } | null
   hover(i: number | null): void
+  /** CPU pick at viewport coordinates, with its cost. */
+  pick(x: number, y: number): { index: number | null; ms: number }
   select(fullName: string | null): void
   focus(id: string | null): void
   /** Renders continuously for `ms` and returns the measured frame rate. */
@@ -53,6 +56,12 @@ export function DebugHooks() {
         return { x: p.x + r.left, y: p.y + r.top }
       },
       hover: (i) => useGalaxyStore.getState().actions.hover(i),
+      pick(x, y) {
+        const r = gl.domElement.getBoundingClientRect()
+        const t = performance.now()
+        const index = pickAt(x - r.left, y - r.top)
+        return { index, ms: performance.now() - t }
+      },
       select(fullName) {
         const s = useGalaxyStore.getState()
         const i = fullName === null ? null : s.galaxy?.byFullName.get(fullName.toLowerCase()) ?? null
