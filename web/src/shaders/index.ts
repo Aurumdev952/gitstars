@@ -9,6 +9,8 @@ import starFrag from './star.frag.glsl?raw'
 import backdropFrag from './backdrop.frag.glsl?raw'
 import dustVert from './dust.vert.glsl?raw'
 import dustFrag from './dust.frag.glsl?raw'
+import nebulaVert from './nebula.vert.glsl?raw'
+import nebulaFrag from './nebula.frag.glsl?raw'
 
 const chunks: Record<string, string> = { gs_layout: layout, gs_fog: fog, gs_noise: noise }
 
@@ -34,11 +36,12 @@ export const shaders = {
     fragmentShader: resolveIncludes(backdropFrag),
   },
   dust: { vertexShader: resolveIncludes(dustVert), fragmentShader: resolveIncludes(dustFrag) },
+  nebula: { vertexShader: resolveIncludes(nebulaVert), fragmentShader: resolveIncludes(nebulaFrag) },
 }
 
 const u = <T>(value: T) => ({ value })
 
-/** One shared uniform set: the star, dust and later the nebula/line materials all read layout and time from it. */
+/** One shared uniform set: star, dust, nebula and later line materials read layout and time from it. */
 export function createSceneUniforms() {
   const { fog, stars } = sceneTheme
   return {
