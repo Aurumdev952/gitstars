@@ -1,0 +1,14 @@
+data/
+.venv/
+node_modules/
+.env
+*.pyc
+__pycache__/
+web/public/data/*
+!web/public/data/fixture/
+web/public/models/
+.output/
+dist/
+.audit/
+todo.md
+decisions.tsv

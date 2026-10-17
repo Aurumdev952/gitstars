@@ -1,0 +1,147 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://gitstars.local/galaxy.schema.json",
+  "title": "gitstars galaxy export, schemaVersion 1",
+  "description": "Written by `gs export` to web/public/data/galaxy.json. Read by the web app. Arrays of repos and clusters are index-addressed: repo indices are positions in `repos`, and vectors.f16.bin rows follow the same order.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "meta", "clusters", "repos"],
+  "properties": {
+    "schemaVersion": { "const": 1 },
+    "meta": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["generatedAt", "viewer", "counts", "bounds", "starredRange", "embedding", "searchProbes"],
+      "properties": {
+        "generatedAt": { "type": "string", "format": "date-time" },
+        "viewer": { "type": "string", "description": "GitHub login whose stars these are." },
+        "counts": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["repos", "galaxies", "systems", "summarized"],
+          "properties": {
+            "repos": { "type": "integer", "minimum": 0 },
+            "galaxies": { "type": "integer", "minimum": 0 },
+            "systems": { "type": "integer", "minimum": 0 },
+            "summarized": { "type": "integer", "minimum": 0 }
+          }
+        },
+        "bounds": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["min", "max"],
+          "properties": {
+            "min": { "$ref": "#/$defs/vec3" },
+            "max": { "$ref": "#/$defs/vec3" }
+          }
+        },
+        "starredRange": {
+          "type": "array",
+          "prefixItems": [{ "type": "string", "format": "date-time" }, { "type": "string", "format": "date-time" }],
+          "minItems": 2,
+          "maxItems": 2
+        },
+        "embedding": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["model", "browserModel", "dims", "dtype", "normalized", "queryPrefix", "docPrefix"],
+          "properties": {
+            "model": { "type": "string", "description": "e.g. google/embeddinggemma-2" },
+            "browserModel": { "type": "string", "description": "e.g. onnx-community/embeddinggemma-2-ONNX" },
+            "dims": { "const": 256 },
+            "dtype": { "const": "float16" },
+            "normalized": { "const": true },
+            "queryPrefix": { "type": "string", "description": "Prepended to a search query before embedding, e.g. 'task: search result | query: '" },
+            "docPrefix": { "type": "string", "description": "Template used for stored search vectors, with {title} and {text}, e.g. 'title: {title} | text: {text}'" }
+          }
+        },
+        "searchProbes": {
+          "type": "array",
+          "description": "Golden queries embedded by the pipeline model, used to check the browser model for drift.",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["query", "topIdx"],
+            "properties": {
+              "query": { "type": "string" },
+              "topIdx": { "type": "array", "items": { "type": "integer", "minimum": 0 }, "maxItems": 10 }
+            }
+          }
+        }
+      }
+    },
+    "clusters": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "level", "parentId", "name", "blurb", "keywords", "centroid", "radius", "members"],
+        "properties": {
+          "id": { "type": "string", "pattern": "^g\\d{2}(\\.s\\d{2})?$", "description": "Galaxy 'g03', system 'g03.s07'." },
+          "level": { "enum": [0, 1], "description": "0 galaxy (macro), 1 system (fine)." },
+          "parentId": { "type": ["string", "null"], "description": "null for galaxies, the galaxy id for systems." },
+          "name": { "type": "string", "minLength": 1 },
+          "blurb": { "type": "string" },
+          "keywords": { "type": "array", "items": { "type": "string" } },
+          "centroid": { "$ref": "#/$defs/vec3" },
+          "radius": { "type": "number", "minimum": 0 },
+          "members": { "type": "array", "items": { "type": "integer", "minimum": 0 } }
+        }
+      }
+    },
+    "repos": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "fullName", "url", "homepage", "description", "oneLiner", "summary", "kind", "domain", "tags",
+          "stack", "language", "stars", "pushedAt", "starredAt", "archived", "pos", "pos2", "galaxyId",
+          "systemId", "outlier", "neighbors", "quality", "summarized"
+        ],
+        "properties": {
+          "fullName": { "type": "string", "pattern": "^[^/]+/[^/]+$" },
+          "url": { "type": "string" },
+          "homepage": { "type": ["string", "null"] },
+          "description": { "type": ["string", "null"], "description": "Raw GitHub description." },
+          "oneLiner": { "type": "string", "description": "LLM one-liner, or the GitHub description when not summarized." },
+          "summary": { "type": ["string", "null"] },
+          "kind": { "$ref": "#/$defs/kind" },
+          "domain": { "type": ["string", "null"] },
+          "tags": { "type": "array", "items": { "type": "string" } },
+          "stack": { "type": "array", "items": { "type": "string" } },
+          "language": { "type": ["string", "null"] },
+          "stars": { "type": "integer", "minimum": 0 },
+          "pushedAt": { "type": ["string", "null"], "format": "date-time" },
+          "starredAt": { "type": "string", "format": "date-time" },
+          "archived": { "type": "boolean" },
+          "pos": { "$ref": "#/$defs/vec3" },
+          "pos2": { "$ref": "#/$defs/vec2" },
+          "galaxyId": { "type": "string" },
+          "systemId": { "type": "string" },
+          "outlier": { "type": "boolean", "description": "HDBSCAN noise point attached to the nearest system." },
+          "neighbors": {
+            "type": "array",
+            "maxItems": 8,
+            "items": {
+              "type": "array",
+              "prefixItems": [{ "type": "integer", "minimum": 0 }, { "type": "number" }],
+              "minItems": 2,
+              "maxItems": 2
+            },
+            "description": "[repoIndex, cosine] sorted by cosine desc."
+          },
+          "quality": { "type": ["number", "null"], "minimum": 0, "maximum": 1, "description": "Judge score normalized to 0-1, null when not summarized." },
+          "summarized": { "type": "boolean" }
+        }
+      }
+    }
+  },
+  "$defs": {
+    "vec3": { "type": "array", "items": { "type": "number" }, "minItems": 3, "maxItems": 3 },
+    "vec2": { "type": "array", "items": { "type": "number" }, "minItems": 2, "maxItems": 2 },
+    "kind": {
+      "enum": ["library", "framework", "app", "cli", "tool", "service", "model", "dataset", "awesome-list", "tutorial", "template", "other"]
+    }
+  }
+}
