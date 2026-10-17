@@ -4,21 +4,29 @@ export type ClusterColor = {
   hue: number
   /** OKLCH string for DOM use. */
   css: string
-  /** Linear sRGB for the shaders. */
+  /** Linear sRGB for labels and other flat 3D surfaces. */
   linear: [number, number, number]
+  /** Deeper, more chromatic linear sRGB for star halos; the shader whitens the core, and bloom plus AgX wash pastel hues out. */
+  star: [number, number, number]
 }
 
 const GOLDEN_ANGLE = 137.508
 const BASE = { l: 0.78, c: 0.14 }
 const toLinear = converter('lrgb')
 
+const linearOf = (l: number, c: number, h: number): [number, number, number] => {
+  const lin = toLinear(clampChroma({ mode: 'oklch' as const, l, c, h }, 'oklch'))
+  return [Math.max(0, lin.r), Math.max(0, lin.g), Math.max(0, lin.b)]
+}
+
 export function oklchColor(l: number, c: number, h: number): ClusterColor {
-  const color = clampChroma({ mode: 'oklch' as const, l, c, h: ((h % 360) + 360) % 360 }, 'oklch')
-  const lin = toLinear(color)
+  const hue = ((h % 360) + 360) % 360
+  const color = clampChroma({ mode: 'oklch' as const, l, c, h: hue }, 'oklch')
   return {
-    hue: color.h ?? h,
+    hue: color.h ?? hue,
     css: formatCss(color),
-    linear: [Math.max(0, lin.r), Math.max(0, lin.g), Math.max(0, lin.b)],
+    linear: linearOf(l, c, hue),
+    star: linearOf(l - 0.06, c * 1.35, hue),
   }
 }
 

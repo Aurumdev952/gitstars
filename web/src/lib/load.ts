@@ -109,7 +109,7 @@ export function buildGalaxyIndex(data: GalaxyData, vectorsUrl = ''): GalaxyIndex
     galaxyOf[i] = galaxyById.get(r.galaxyId)?.index ?? 0
     const sys = clusterById.get(r.systemId)
     systemOf[i] = sys && sys.level === 1 ? sys.index : 0
-    const c = (sys && sys.level === 1 ? sys : galaxies[galaxyOf[i]!])?.color.linear ?? [1, 1, 1]
+    const c = (sys && sys.level === 1 ? sys : galaxies[galaxyOf[i]!])?.color.star ?? [1, 1, 1]
 
     pos.set(r.pos, i * 3)
     pos2.set([r.pos2[0], r.pos2[1], 0], i * 3)
