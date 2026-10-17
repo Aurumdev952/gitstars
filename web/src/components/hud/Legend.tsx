@@ -21,7 +21,6 @@ export function Legend() {
   const ref = useRef<HTMLElement>(null)
   useOccluder(ref)
   if (!g) return null
-  const focusedGalaxy = focusCluster?.slice(0, 3) ?? null
   return (
     <nav
       ref={ref}
@@ -32,7 +31,7 @@ export function Legend() {
       <h2 className="px-2.5 pb-1.5 text-[11.5px] font-medium text-ink-faint">Galaxies</h2>
       <ul className="scrollbar-thin max-h-[42vh] overflow-y-auto">
         {g.galaxies.map((c) => {
-          const active = focusedGalaxy === c.id
+          const active = focusCluster === c.id
           return (
             <li key={c.id}>
               <button

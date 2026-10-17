@@ -4,10 +4,15 @@ import { useFrame, useThree } from '@react-three/fiber'
 import type CameraControlsImpl from 'camera-controls'
 import type { PerspectiveCamera } from 'three'
 import { useGalaxyStore } from '#/state/store'
+import { cameraIntent, type CameraIntent, type NavState } from '#/lib/cameraIntent'
 import { director } from './Director'
 import { sceneBus } from './sceneBus'
 
+// Mirrors RepoPanel: 420 px wide, inset 16 px from the viewport edge.
 const PANEL_WIDTH = 420
+const PANEL_MARGIN = 16
+const MIN_FREE_WIDTH = 240
+const SMOOTH_TIME = 0.55
 const IDLE_MS = 8000
 const AUTOROTATE_RAD_PER_S = 0.04
 
@@ -32,29 +37,29 @@ export function CameraRig() {
     c.addEventListener('controlstart', onStart)
     c.addEventListener('controlend', onEnd)
 
+    const follow = (intent: CameraIntent) => {
+      if (intent?.kind === 'repo') void director.flyToRepo(intent.index)
+      else if (intent?.kind === 'cluster') void director.frameCluster(intent.id)
+      else if (intent?.kind === 'home') void director.home()
+    }
     const { selected, focusCluster } = useGalaxyStore.getState()
-    void director.home(false).then(() => {
-      if (selected !== null) void director.flyToRepo(selected)
-      else if (focusCluster) void director.frameCluster(focusCluster)
-    })
+    void director.home(false).then(() => follow(cameraIntent({ selected: null, focusCluster: null }, { selected, focusCluster })))
 
-    const unsubSelected = useGalaxyStore.subscribe(
-      (s) => s.selected,
-      (i) => {
-        if (i !== null) void director.flyToRepo(i)
-      },
+    const unsubNav = useGalaxyStore.subscribe(
+      (s): NavState => ({ selected: s.selected, focusCluster: s.focusCluster }),
+      (next, prev) => follow(cameraIntent(prev, next)),
+      { equalityFn: (a, b) => a.selected === b.selected && a.focusCluster === b.focusCluster },
     )
-    const unsubCluster = useGalaxyStore.subscribe(
-      (s) => s.focusCluster,
-      (id) => {
-        if (id && useGalaxyStore.getState().selected === null) void director.frameCluster(id)
-      },
+    const unsubMotion = useGalaxyStore.subscribe(
+      (s) => s.settings.motion,
+      (motion) => (c.smoothTime = motion === 'reduced' ? 0.15 : SMOOTH_TIME),
+      { fireImmediately: true },
     )
     return () => {
       c.removeEventListener('controlstart', onStart)
       c.removeEventListener('controlend', onEnd)
-      unsubSelected()
-      unsubCluster()
+      unsubNav()
+      unsubMotion()
       sceneBus.controls = null
     }
   }, [galaxy])
@@ -71,14 +76,15 @@ export function CameraRig() {
     }
   }, [])
 
+  // Shift the projection centre into the area left of the detail panel, so a framed star sits in
+  // the free space; picking reads camera.projectionMatrix and stays consistent. Priority -0.5 runs
+  // after CameraControls (-1) and before DOM anchors project (0), so reticles never trail a frame.
   useFrame((state, dt) => {
     const s = useGalaxyStore.getState()
-    const c = ref.current
-
-    // Shift the projection centre into the area left of the detail panel, so a framed star sits
-    // in the free space; picking reads camera.projectionMatrix and stays consistent.
     const { width, height } = state.size
-    const target = s.selected !== null && width > 900 ? PANEL_WIDTH / 2 : 0
+    const panel = Math.min(PANEL_WIDTH, width - PANEL_MARGIN * 2)
+    const roomy = width - panel - PANEL_MARGIN * 2 >= MIN_FREE_WIDTH
+    const target = s.selected !== null && roomy ? (panel + PANEL_MARGIN) / 2 : 0
     if (Math.abs(target - offset.current) > 0.25) {
       offset.current += (target - offset.current) * (s.frozen ? 1 : 1 - Math.exp(-6 * dt))
       state.invalidate()
@@ -86,7 +92,11 @@ export function CameraRig() {
     if (offset.current === 0) {
       if (camera.view?.enabled) camera.clearViewOffset()
     } else camera.setViewOffset(width, height, offset.current, 0, width, height)
+  }, -0.5)
 
+  useFrame((_, dt) => {
+    const s = useGalaxyStore.getState()
+    const c = ref.current
     if (
       c &&
       !s.frozen &&
@@ -104,7 +114,7 @@ export function CameraRig() {
     <CameraControls
       ref={ref}
       makeDefault
-      smoothTime={0.55}
+      smoothTime={SMOOTH_TIME}
       draggingSmoothTime={0.12}
       dollyToCursor
       minDistance={2}

@@ -13,6 +13,10 @@ const LONG_FLIGHT = 150
 let seq = 0
 const v = new Vector3()
 
+/** Frozen screenshots land instantly; reduced motion keeps short moves but drops warp. */
+const animated = (requested: boolean) => requested && !useGalaxyStore.getState().frozen
+const warpAllowed = () => useGalaxyStore.getState().settings.motion === 'full'
+
 function begin() {
   const id = ++seq
   useGalaxyStore.getState().actions.setCameraBusy(true)
@@ -46,7 +50,8 @@ export const director = {
     const { alive, end } = begin()
     const sphere = boundingSphere(g.repos.keys(), 1, 20, 0.99)
     if (!sphere) return end()
-    await Promise.all([c.rotateTo(HOME_AZIMUTH, HOME_POLAR, animate), c.fitToSphere(sphere, animate)])
+    const a = animated(animate)
+    await Promise.all([c.rotateTo(HOME_AZIMUTH, HOME_POLAR, a), c.fitToSphere(sphere, a)])
     if (alive()) end()
   },
 
@@ -58,13 +63,14 @@ export const director = {
     const p = new Vector3(...positionAt(g.attrs, i, currentLayout(), [0, 0, 0]))
     const sphere = new Sphere(p, Math.max(12, 4 * g.d8[i]!))
     c.getTarget(v)
-    if (animate && v.distanceTo(p) > LONG_FLIGHT) {
-      sceneBus.uniforms.uWarp.value = 1
+    const a = animated(animate)
+    if (a && v.distanceTo(p) > LONG_FLIGHT) {
+      if (warpAllowed()) sceneBus.uniforms.uWarp.value = 1
       await Promise.all([c.setTarget(p.x, p.y, p.z, true), c.dollyTo(c.distance * 1.2, true)])
       sceneBus.uniforms.uWarp.value = 0
       if (!alive()) return
     }
-    await c.fitToSphere(sphere, animate)
+    await c.fitToSphere(sphere, a)
     end()
   },
 
@@ -73,7 +79,7 @@ export const director = {
     if (!c) return
     const { end } = begin()
     const sphere = boundingSphere(indices)
-    if (sphere) await c.fitToSphere(sphere, animate)
+    if (sphere) await c.fitToSphere(sphere, animated(animate))
     end()
   },
 
