@@ -76,5 +76,3 @@ export const useGalaxyStore = create<GalaxyStore>()(
     },
   })),
 )
-
-export const useActions = () => useGalaxyStore((s) => s.actions)

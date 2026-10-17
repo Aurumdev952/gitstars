@@ -12,22 +12,12 @@ import {
 } from 'three'
 import type { GalaxyIndex } from '#/lib/load'
 import { tileableFbm } from '#/lib/noiseTexture'
+import { mulberry32 } from '#/lib/random'
 import { shaders } from '#/shaders'
 import { sceneBus } from './sceneBus'
 
 const PER_GALAXY = 40
 const QUAD = new Float32Array([-1, -1, 0, 1, -1, 0, 1, 1, 0, -1, 1, 0])
-
-function mulberry32(seed: number) {
-  let a = seed >>> 0
-  return () => {
-    a = (a + 0x6d2b79f5) >>> 0
-    let t = a
-    t = Math.imul(t ^ (t >>> 15), t | 1)
-    t ^= t + Math.imul(t ^ (t >>> 7), t | 61)
-    return ((t ^ (t >>> 14)) >>> 0) / 4294967296
-  }
-}
 
 /** Sprites anchored on random members, so clouds follow each galaxy's density and its layout transitions. */
 function buildNebulae(g: GalaxyIndex) {

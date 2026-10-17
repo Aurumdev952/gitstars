@@ -82,5 +82,3 @@ export const director = {
     if (node) await director.frameIndices(node.members, animate)
   },
 }
-
-export type Director = typeof director

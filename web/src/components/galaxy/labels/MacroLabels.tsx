@@ -7,7 +7,7 @@ import { sceneTheme } from '#/lib/theme'
 import { useGalaxyStore } from '#/state/store'
 import { starScreenPosition } from '../sceneBus'
 
-export const LABEL_FONT = '/fonts/Geist-Medium.woff'
+const LABEL_FONT = '/fonts/Geist-Medium.woff'
 const CHARACTERS = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789&-.,:/+ \'’'
 
 type TextLike = {
@@ -47,11 +47,10 @@ export function MacroLabels({ galaxy }: { galaxy: GalaxyIndex }) {
     const cam = camera as PerspectiveCamera
     const worldPerPx = (2 * Math.tan((cam.fov * Math.PI) / 360)) / size.height
     const px = sceneTheme.label.macroPx
-    const hoveredCluster = useGalaxyStore.getState().hoveredCluster
     up.set(0, 1, 0).applyQuaternion(cam.quaternion)
+    const s = useGalaxyStore.getState()
     const order = items.map((_, k) => k).sort((a, b) => cam.position.distanceTo(items[a]!.center) - cam.position.distanceTo(items[b]!.center))
     // The selected and hovered stars' reticles claim their space first, so no label covers them.
-    const s = useGalaxyStore.getState()
     const placed: Rect[] = []
     for (const i of [s.selected, s.hovered]) {
       if (i === null) continue
@@ -93,7 +92,7 @@ export function MacroLabels({ galaxy }: { galaxy: GalaxyIndex }) {
       const anchorDist = Math.max(1, dist)
       group.position.copy(item.center).addScaledVector(up, offsetPx * worldPerPx * anchorDist)
       group.scale.setScalar(anchorDist * worldPerPx * px)
-      const emphasis = hoveredCluster === null ? 0.86 : hoveredCluster === item.id ? 1 : 0.4
+      const emphasis = s.hoveredCluster === null ? 0.86 : s.hoveredCluster === item.id ? 1 : 0.4
       const crowded = !onScreen ? 0 : visible && chosen === null ? 0.15 : 1
       text.fillOpacity = fade * emphasis * crowded
       text.outlineOpacity = fade * emphasis * crowded * 0.75

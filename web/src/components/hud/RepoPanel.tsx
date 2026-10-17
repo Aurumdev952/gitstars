@@ -88,7 +88,6 @@ function RepoDetails({ g, i }: { g: GalaxyIndex; i: number }) {
             </Chip>
           )}
           {r.archived && <Chip className="border-amber-200/20 text-amber-100/80">archived</Chip>}
-          {r.outlier && <Chip className="text-ink-faint">drifter</Chip>}
         </div>
 
         <p className="mt-4 text-[15px] leading-relaxed text-ink">{r.oneLiner}</p>

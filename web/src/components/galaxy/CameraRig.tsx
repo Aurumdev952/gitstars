@@ -7,7 +7,7 @@ import { useGalaxyStore } from '#/state/store'
 import { director } from './Director'
 import { sceneBus } from './sceneBus'
 
-export const PANEL_WIDTH = 420
+const PANEL_WIDTH = 420
 const IDLE_MS = 8000
 const AUTOROTATE_RAD_PER_S = 0.04
 

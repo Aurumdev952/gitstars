@@ -1,6 +1,7 @@
 import { useEffect, useMemo } from 'react'
 import { AdditiveBlending, BufferAttribute, BufferGeometry, ShaderMaterial } from 'three'
 import { shaders } from '#/shaders'
+import { mulberry32 } from '#/lib/random'
 import { sceneBus } from './sceneBus'
 
 // Three far shells give parallax against the backdrop; a sparse inner cloud of motes gives the
@@ -17,17 +18,6 @@ const TINTS = [
   [1.0, 0.86, 0.7],
   [0.75, 0.62, 1.0],
 ] as const
-
-function mulberry32(seed: number) {
-  let a = seed >>> 0
-  return () => {
-    a = (a + 0x6d2b79f5) >>> 0
-    let t = a
-    t = Math.imul(t ^ (t >>> 15), t | 1)
-    t ^= t + Math.imul(t ^ (t >>> 7), t | 61)
-    return ((t ^ (t >>> 14)) >>> 0) / 4294967296
-  }
-}
 
 function buildDust(center: readonly number[]) {
   const rand = mulberry32(1337)

@@ -60,10 +60,6 @@ export function currentProjector(camera: Camera | null = sceneBus.camera): Proje
 
 const scratch: [number, number, number] = [0, 0, 0]
 
-export function starWorldPosition(g: GalaxyIndex, i: number): [number, number, number] {
-  return positionAt(g.attrs, i, currentLayout(), [0, 0, 0])
-}
-
 export function starScreenPosition(g: GalaxyIndex, i: number): ScreenPoint | null {
   const m = currentProjector()
   if (!m) return null
