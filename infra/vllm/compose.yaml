@@ -1,0 +1,24 @@
+services:
+  gemma4:
+    image: vllm/vllm-openai:v0.31.0
+    container_name: gemma4
+    ports: ["127.0.0.1:8000:8000"]
+    ipc: host
+    gpus: all
+    environment:
+      - VLLM_USE_V2_MODEL_RUNNER=1
+    volumes:
+      - ~/.cache/huggingface:/root/.cache/huggingface
+      - vllm-compile-cache:/root/.cache/vllm
+      - vllm-flashinfer-cache:/root/.cache/flashinfer
+    command: >
+      RedHatAI/gemma-4-26B-A4B-it-NVFP4 --served-model-name gemma-4-26b
+      --max-model-len 32768 --gpu-memory-utilization 0.95 --kv-cache-dtype fp8
+      --max-num-seqs 64 --max-num-batched-tokens 4096
+      --enable-prefix-caching --enable-chunked-prefill --async-scheduling
+      --language-model-only --reasoning-parser gemma4
+      --default-chat-template-kwargs '{"enable_thinking": false}'
+      --structured-outputs-config.backend xgrammar
+volumes:
+  vllm-compile-cache: {}
+  vllm-flashinfer-cache: {}
