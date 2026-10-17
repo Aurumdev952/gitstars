@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
-import { buildGalaxyIndex, resolveDataSource, spatialNeighbors } from './load'
+import { buildGalaxyIndex, GalaxyLoadError, resolveDataSource, spatialNeighbors } from './load'
 import type { GalaxyData } from './schema'
 
 const fixture: GalaxyData = JSON.parse(
@@ -43,6 +43,20 @@ describe('buildGalaxyIndex', () => {
   it('gives the densest stars the highest density', () => {
     const order = [...g.attrs.density.keys()].sort((a, b) => g.attrs.density[b]! - g.attrs.density[a]!)
     expect(g.d8[order[0]!]!).toBeLessThan(g.d8[order[order.length - 1]!]!)
+  })
+})
+
+describe('assertIntegrity', () => {
+  const broken: [string, (d: GalaxyData) => void][] = [
+    ['an unknown system id', (d) => (d.repos[3]!.systemId = 'g09.s09')],
+    ['a galaxy id used as a system id', (d) => (d.repos[3]!.systemId = d.repos[3]!.galaxyId)],
+    ['a neighbour index past the end', (d) => (d.repos[3]!.neighbors[0] = [d.repos.length, 0.9])],
+    ['a cluster member past the end', (d) => d.clusters[0]!.members.push(d.repos.length)],
+  ]
+  it.each(broken)('rejects %s', (_name, mutate) => {
+    const d = structuredClone(fixture)
+    mutate(d)
+    expect(() => buildGalaxyIndex(d)).toThrow(GalaxyLoadError)
   })
 })
 

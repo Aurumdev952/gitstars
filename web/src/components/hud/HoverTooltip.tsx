@@ -19,7 +19,7 @@ export function HoverTooltip() {
     if (hovered === null) return setShown(null)
     const t = setTimeout(() => setShown(hovered), DELAY_MS)
     return () => clearTimeout(t)
-  }, [hovered])
+  }, [hovered, g])
 
   useEffect(() => {
     if (shown === null || !g) return
@@ -42,7 +42,8 @@ export function HoverTooltip() {
     })
   }, [shown, g])
 
-  if (shown === null || !g) return null
+  // `shown` can outlive a dataset swap by one render.
+  if (shown === null || !g || shown >= g.n) return null
   const r = g.repos[shown]!
   const sys = g.systems[g.systemOf[shown]!]!
   const [owner, name] = splitFullName(r.fullName)

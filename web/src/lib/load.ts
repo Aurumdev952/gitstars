@@ -67,7 +67,29 @@ export async function loadGalaxy(source: DataSource): Promise<GalaxyIndex> {
 
 const DAY = 86_400_000
 
+/**
+ * Cross-references the schema cannot express. Everything downstream indexes typed arrays by these,
+ * so a dangling id or index is rejected here rather than guarded at every use.
+ */
+export function assertIntegrity(data: GalaxyData) {
+  const n = data.repos.length
+  const level = new Map(data.clusters.map((c) => [c.id, c.level]))
+  const fail = (msg: string) => {
+    throw new GalaxyLoadError(`galaxy export is inconsistent: ${msg}`)
+  }
+  for (const c of data.clusters) {
+    if (c.level === 1 && level.get(c.parentId ?? '') !== 0) fail(`system ${c.id} has no parent galaxy ${c.parentId}`)
+    for (const m of c.members) if (m >= n) fail(`cluster ${c.id} lists member ${m} of ${n}`)
+  }
+  data.repos.forEach((r, i) => {
+    if (level.get(r.galaxyId) !== 0) fail(`${r.fullName} points at unknown galaxy ${r.galaxyId}`)
+    if (level.get(r.systemId) !== 1) fail(`${r.fullName} points at unknown system ${r.systemId}`)
+    for (const [j] of r.neighbors) if (j >= n || j === i) fail(`${r.fullName} has neighbour index ${j}`)
+  })
+}
+
 export function buildGalaxyIndex(data: GalaxyData, vectorsUrl = ''): GalaxyIndex {
+  assertIntegrity(data)
   const { repos } = data
   const n = repos.length
   const galaxyClusters = data.clusters.filter((c) => c.level === 0).sort((a, b) => a.id.localeCompare(b.id))
@@ -80,8 +102,8 @@ export function buildGalaxyIndex(data: GalaxyData, vectorsUrl = ''): GalaxyIndex
   for (const s of systemClusters) siblingsOf.set(s.parentId ?? '', [...(siblingsOf.get(s.parentId ?? '') ?? []), s])
   const systems: ClusterNode[] = systemClusters.map((c, index) => {
     const siblings = siblingsOf.get(c.parentId ?? '')!
-    const parent = galaxyById.get(c.parentId ?? '')
-    return { ...c, index, color: systemColor(parent?.color.hue ?? 0, siblings.indexOf(c), siblings.length) }
+    const parent = galaxyById.get(c.parentId ?? '')!
+    return { ...c, index, color: systemColor(parent.color.hue, siblings.indexOf(c), siblings.length) }
   })
   const clusterById = new Map<string, ClusterNode>([...galaxies, ...systems].map((c) => [c.id, c]))
 
@@ -106,10 +128,10 @@ export function buildGalaxyIndex(data: GalaxyData, vectorsUrl = ''): GalaxyIndex
 
   repos.forEach((r, i) => {
     byFullName.set(r.fullName.toLowerCase(), i)
-    galaxyOf[i] = galaxyById.get(r.galaxyId)?.index ?? 0
-    const sys = clusterById.get(r.systemId)
-    systemOf[i] = sys && sys.level === 1 ? sys.index : 0
-    const c = (sys && sys.level === 1 ? sys : galaxies[galaxyOf[i]!])?.color.star ?? [1, 1, 1]
+    galaxyOf[i] = galaxyById.get(r.galaxyId)!.index
+    const sys = clusterById.get(r.systemId)!
+    systemOf[i] = sys.index
+    const c = sys.color.star
 
     pos.set(r.pos, i * 3)
     pos2.set([r.pos2[0], r.pos2[1], 0], i * 3)

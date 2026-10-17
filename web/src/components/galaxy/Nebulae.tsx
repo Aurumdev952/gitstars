@@ -24,6 +24,7 @@ function buildNebulae(g: GalaxyIndex) {
   const rand = mulberry32(42)
   const anchors: { member: number; galaxy: number }[] = []
   for (const gal of g.galaxies) {
+    if (gal.members.length === 0) continue
     const count = Math.min(PER_GALAXY, Math.max(8, Math.round(gal.members.length * 0.6)))
     for (let k = 0; k < count; k++) anchors.push({ member: gal.members[Math.floor(rand() * gal.members.length)]!, galaxy: gal.index })
   }
