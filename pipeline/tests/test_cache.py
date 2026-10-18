@@ -257,3 +257,20 @@ async def test_429s_do_not_spend_the_free_budget(ctx):
     state = RunState("openrouter", pool, RateLimitedTransport(), decider=None, budget=RequestBudget(2))
     _, model = await summarize._generate(state, ctx, r, "card text", None, set())
     assert model == "b:free" and state.budget.remaining == 1 and state.unbilled == 1
+
+
+class FlakyOnceTransport:
+    def __init__(self):
+        self.calls = 0
+
+    async def complete(self, slot, messages, schema):
+        self.calls += 1
+        return "{ " + " " * 50 if self.calls == 1 else VALID
+
+
+async def test_a_single_model_pool_retries_the_same_model(ctx):
+    r = repo("o/a")
+    pool = Pool([ModelSlot("gemma-4-26b", rpm=None)], concurrency=4)
+    state = RunState("local", pool, FlakyOnceTransport(), decider=None)
+    summary, model = await summarize._generate(state, ctx, r, "card text", None, set())
+    assert model == "gemma-4-26b" and state.transport.calls == 2

@@ -84,7 +84,9 @@ async def _generate(
         except PoolExhausted:
             state.budget.refund()
             return None
-        tried.add(slot.id)
+        if len(state.pool.slots) > 1:
+            # With one model (local vLLM) a retry samples the same model again instead of giving up.
+            tried.add(slot.id)
         t0 = time.monotonic()
         try:
             summary = await _complete_and_parse(state, slot, messages)
