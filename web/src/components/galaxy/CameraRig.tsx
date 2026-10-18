@@ -64,11 +64,17 @@ export function CameraRig() {
         const s = useGalaxyStore.getState()
         if (!hits || hits.frame.length === 0 || s.selected !== null || director.isPreviewing()) return
         if (prev && prev.query === hits.query && prev.frame.join() === hits.frame.join()) return
-        void director.frameIndices(hits.frame)
+        // Inside a focused cluster, frame only the hits that belong to it, and stay put if none do.
+        const members = s.focusCluster ? new Set(s.galaxy?.clusterById.get(s.focusCluster)?.members) : null
+        const frame = members ? hits.frame.filter((i) => members.has(i)) : hits.frame
+        if (frame.length > 0) void director.frameIndices(frame)
       },
     )
     const applyView = (view: string, animate: boolean | null) => {
       const flat = view === 'flat'
+      // Drop the whole turns autorotate wound up, so the flat lock at azimuth 0 turns less than half a turn.
+      c.normalizeRotations()
+      if (c.azimuthAngle > Math.PI) c.azimuthAngle -= Math.PI * 2
       const A = CameraControlsImpl.ACTION
       c.mouseButtons.left = flat ? A.TRUCK : A.ROTATE
       c.touches.one = flat ? A.TOUCH_TRUCK : A.TOUCH_ROTATE
@@ -147,6 +153,8 @@ export function CameraRig() {
       !s.frozen &&
       s.settings.autorotate &&
       s.settings.motion === 'full' &&
+      // The azimuth setter bypasses camera-controls' clamps, so it would tip the flat map edge-on.
+      s.view === '3d' &&
       !s.cameraBusy &&
       !s.dragging &&
       performance.now() - lastInput.current > IDLE_MS

@@ -17,10 +17,26 @@ const PREVIEW_SMOOTH_TIME = 0.28
 type SavedView = { position: Vector3; target: Vector3 }
 let saved: SavedView | null = null
 let previewing = false
+/** smoothTime from before the first of a run of overlapping previews; restored once they settle. */
+let previewBase: number | null = null
+let previewSeq = 0
+
+function endPreview() {
+  previewing = false
+  const c = sceneBus.controls
+  if (c && previewBase !== null) c.smoothTime = previewBase
+  previewBase = null
+}
 
 /** Frozen screenshots land instantly; reduced motion keeps short moves but drops warp. */
 const animated = (requested: boolean) => requested && !useGalaxyStore.getState().frozen
 const warpAllowed = () => useGalaxyStore.getState().settings.motion === 'full'
+
+/** `to` shifted by whole turns to lie within half a turn of `from`, since autorotate winds the azimuth up without bound. */
+function nearestAngle(from: number, to: number) {
+  const turn = Math.PI * 2
+  return to + turn * Math.round((from - to) / turn)
+}
 
 function begin() {
   const id = ++seq
@@ -57,7 +73,7 @@ export const director = {
     const sphere = boundingSphere(g.repos.keys(), 1, 20, 0.99)
     if (!sphere) return end()
     const a = animated(animate)
-    await Promise.all([c.rotateTo(HOME_AZIMUTH, HOME_POLAR, a), c.fitToSphere(sphere, a)])
+    await Promise.all([c.rotateTo(nearestAngle(c.azimuthAngle, HOME_AZIMUTH), HOME_POLAR, a), c.fitToSphere(sphere, a)])
     if (alive()) end()
   },
 
@@ -71,7 +87,7 @@ export const director = {
     const sphere = boundingSphere(g.repos.keys(), 0.92, 20, 0.99, { ...RESTING_LAYOUT, flat: 1 })
     if (!sphere) return end()
     const a = animated(animate)
-    await Promise.all([c.rotateTo(0, Math.PI / 2, a), c.fitToSphere(sphere, a)])
+    await Promise.all([c.rotateTo(nearestAngle(c.azimuthAngle, 0), Math.PI / 2, a), c.fitToSphere(sphere, a)])
     if (alive()) end()
   },
 
@@ -108,17 +124,18 @@ export const director = {
     const c = sceneBus.controls
     if (!c) return
     previewing = true
-    const smooth = c.smoothTime
-    c.smoothTime = Math.min(smooth, PREVIEW_SMOOTH_TIME)
+    previewBase ??= c.smoothTime
+    c.smoothTime = Math.min(previewBase, PREVIEW_SMOOTH_TIME)
+    const id = ++previewSeq
     await director.flyToRepo(i)
-    c.smoothTime = smooth
+    if (id === previewSeq && previewBase !== null) c.smoothTime = previewBase
   },
 
   /** Remembers the current view so a cancelled preview can return to it. */
   saveView() {
     const c = sceneBus.controls
     if (!c) return
-    previewing = false
+    endPreview()
     saved = { position: c.getPosition(new Vector3()), target: c.getTarget(new Vector3()) }
   },
 
@@ -126,7 +143,7 @@ export const director = {
     const c = sceneBus.controls
     const view = saved
     saved = null
-    previewing = false
+    endPreview()
     if (!c || !view) return
     const { end } = begin()
     await c.setLookAt(view.position.x, view.position.y, view.position.z, view.target.x, view.target.y, view.target.z, animated(true))
@@ -135,7 +152,7 @@ export const director = {
 
   forgetView() {
     saved = null
-    previewing = false
+    endPreview()
   },
 
   /** True between a palette preview and the palette closing; hit framing waits meanwhile. */
