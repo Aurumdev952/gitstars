@@ -81,7 +81,9 @@ function PaletteBody({ onClose }: { onClose: (how: 'commit' | 'cancel') => void 
 
   const trimmed = text.trim()
   const fresh = hits !== null && hits.query === trimmed
-  const repos = fresh ? hits.idx.slice(0, SHOWN_REPOS) : []
+  // Keep the previous query's rows while the next one is in flight, so the list never empties
+  // under the cursor and Enter mid-typing still lands on a repository.
+  const repos = trimmed && hits ? hits.idx.slice(0, SHOWN_REPOS) : []
   const clusters = useMemo(() => (trimmed ? matchClusters(g, trimmed) : g.galaxies.slice(0, 9)), [g, trimmed])
 
   const actions: Action[] = []
@@ -118,6 +120,25 @@ function PaletteBody({ onClose }: { onClose: (how: 'commit' | 'cancel') => void 
 
   // Only arrow keys preview; the pointer gliding over rows should not fly the camera.
   const byKeys = useRef(false)
+
+  // New results move the highlight back to the best hit unless the user is arrowing through them.
+  const topHit = repos[0]
+  useEffect(() => {
+    if (!byKeys.current && topHit !== undefined) setActive(`repo:${topHit}`)
+  }, [hits?.query, topHit])
+
+  // Enter pressed before this query's results arrive waits for them, then opens the best hit,
+  // instead of committing whatever row happened to be first while the list was still filling.
+  const pendingEnter = useRef(false)
+  const openRepo = (i: number) => {
+    onClose('commit')
+    select(i)
+  }
+  useEffect(() => {
+    if (!pendingEnter.current || !fresh) return
+    pendingEnter.current = false
+    if (topHit !== undefined) openRepo(topHit)
+  })
   const onActive = (value: string) => {
     setActive(value)
     clearTimeout(previewTimer.current)
@@ -137,7 +158,15 @@ function PaletteBody({ onClose }: { onClose: (how: 'commit' | 'cancel') => void 
       value={current}
       onValueChange={onActive}
       label="Search your stars"
-      onKeyDownCapture={(e) => (byKeys.current = e.key === 'ArrowDown' || e.key === 'ArrowUp')}
+      onKeyDownCapture={(e) => {
+        if (e.key === 'Enter' && !byKeys.current && trimmed && !fresh) {
+          e.preventDefault()
+          e.stopPropagation()
+          pendingEnter.current = true
+          return
+        }
+        byKeys.current = e.key === 'ArrowDown' || e.key === 'ArrowUp' || (byKeys.current && e.key === 'Enter')
+      }}
       onPointerMoveCapture={() => (byKeys.current = false)}
     >
       <div className="flex h-[58px] items-center gap-3 border-b border-glass-border px-4">
@@ -173,10 +202,7 @@ function PaletteBody({ onClose }: { onClose: (how: 'commit' | 'cancel') => void 
                 <CommandItem
                   key={i}
                   value={`repo:${i}`}
-                  onSelect={() => {
-                    onClose('commit')
-                    select(i)
-                  }}
+                  onSelect={() => openRepo(i)}
                   className="items-start py-2"
                 >
                   <ClusterDot color={sys.color.css} className="mt-[7px] size-1.5" />
