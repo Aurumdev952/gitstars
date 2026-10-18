@@ -7,7 +7,12 @@ const flag = z
   .optional()
   .transform((v) => v !== undefined && v !== false && v !== 0 && v !== 'false' && v !== '0')
 
-const list = <T extends z.ZodType>(item: T) => z.array(item).optional().catch(undefined)
+// A hand-written link says `?lang=Rust`; the router itself writes `?lang=%5B%22Rust%22%5D`.
+const list = <T extends z.ZodType>(item: T) =>
+  z
+    .preprocess((v) => (typeof v === 'string' ? [v] : v), z.array(item))
+    .optional()
+    .catch(undefined)
 const month = z.string().regex(/^\d{4}-\d{2}$/)
 // Over-long text is cut rather than dropped, so a pasted paragraph still searches.
 const text = z

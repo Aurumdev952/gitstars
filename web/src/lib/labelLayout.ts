@@ -83,6 +83,8 @@ export type LabelBox = {
    * this close hides: a name that wanders off reads as belonging to whatever it lands on.
    */
   maxDrift?: number
+  /** Slot 0 is where the label belongs; see `place`. */
+  ideal?: boolean
 }
 
 /** Pixel distance from (x, y) to the nearest point of `r`; 0 when the point is inside. */
@@ -116,10 +118,12 @@ function tryPlace(occ: Occupancy, b: LabelBox, s: number, margin: number) {
 
 /**
  * Places `b` in the first free slot (the previous one first), claims it, and returns the slot, or
- * null when every slot collides or leaves the viewport.
+ * null when every slot collides or leaves the viewport. With `ideal`, a free slot 0 beats the
+ * previous slot, so a label that fell back when crowded returns once the crowd moves on.
  */
 export function place(occ: Occupancy, b: LabelBox, margin = 6): number | null {
   const prev = b.prev !== null && b.prev < b.slots.length ? b.prev : -1
+  if (b.ideal && prev !== 0 && tryPlace(occ, b, 0, margin)) return 0
   if (prev >= 0 && tryPlace(occ, b, prev, margin)) return prev
   for (let s = 0; s < b.slots.length; s++) if (s !== prev && tryPlace(occ, b, s, margin)) return s
   return null

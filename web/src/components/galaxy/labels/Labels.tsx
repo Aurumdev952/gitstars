@@ -207,6 +207,7 @@ export function Labels({ galaxy }: { galaxy: GalaxyIndex }) {
       box.prev = repoState.placed.get(i) ?? null
       box.pad = 2
       box.maxDrift = undefined
+      box.ideal = false
       const slot = place(o, box, 4)
       if (slot !== null) repoPlaced.set(i, slot)
     }
@@ -377,6 +378,7 @@ function placeCluster(l: ClusterLabel, text: TextLike | undefined, occ: Occupanc
   box.h = h
   box.slots = insetSlots(w, h, labelSlots)
   box.prev = l.slot
+  box.ideal = true
   box.pad = 0
   box.maxDrift = MAX_DRIFT
   const slot = place(occ, box)

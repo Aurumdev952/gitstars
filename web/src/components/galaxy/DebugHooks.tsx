@@ -45,6 +45,8 @@ type LabelReport = {
   share: number
   /** The cluster owning most stars under the rect; null when none are. */
   owner: string | null
+  /** Pixels from the rect to the cluster's projected label anchor; 0 when the rect covers it. */
+  drift: number
 }
 
 declare global {
@@ -80,6 +82,11 @@ function labelReport(canvas: DOMRect): LabelReport[] {
     const [ax, ay] = toScreen(o, b[0], b[1])
     const [bx, by] = toScreen(o, b[2], b[3])
     const rect = { x0: Math.min(ax, bx), y0: Math.min(ay, by), x1: Math.max(ax, bx), y1: Math.max(ay, by) }
+    const flat = sceneBus.uniforms.uFlat.value
+    const a = new Vector3(...node.anchor).lerp(new Vector3(...node.anchor2), flat).project(cam)
+    const ax0 = ((a.x + 1) / 2) * canvas.width
+    const ay0 = ((1 - a.y) / 2) * canvas.height
+    const drift = Math.hypot(Math.max(rect.x0 - ax0, 0, ax0 - rect.x1), Math.max(rect.y0 - ay0, 0, ay0 - rect.y1))
     const counts = new Map<number, number>()
     let total = 0
     for (const s of stars) {
@@ -91,7 +98,7 @@ function labelReport(canvas: DOMRect): LabelReport[] {
     let owner: number | null = null
     for (const [id, n] of counts) if (owner === null || n > counts.get(owner)!) owner = id
     const list = tier === 'galaxy' ? g.galaxies : g.systems
-    out.push({ name: node.name, tier, rect, share: total ? (counts.get(node.index) ?? 0) / total : 0, owner: owner === null ? null : list[owner]!.name })
+    out.push({ name: node.name, tier, rect, share: total ? (counts.get(node.index) ?? 0) / total : 0, owner: owner === null ? null : list[owner]!.name, drift })
   })
   return out
 }

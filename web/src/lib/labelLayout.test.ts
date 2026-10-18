@@ -24,6 +24,14 @@ describe('place', () => {
     expect(place(occ, box(400, 300))).toBeNull()
   })
 
+  it('returns an ideal label to slot 0 once it is free, but keeps a fallback over other fallbacks', () => {
+    expect(place(new Occupancy(800, 600), { ...box(400, 300, 6), ideal: true })).toBe(0)
+    const occ = new Occupancy(800, 600)
+    occ.add({ x0: 395, y0: 299, x1: 405, y1: 301 })
+    expect(place(occ, { ...box(400, 300, 6), ideal: true })).toBe(6)
+    expect(place(new Occupancy(800, 600), { ...box(400, 300, 6), ideal: false })).toBe(6)
+  })
+
   it('hides a label rather than placing it farther than maxDrift from its anchor', () => {
     const far: LabelBox = { x: 400, y: 300, w: 120, h: 18, slots: [[20, -9]], prev: null }
     expect(place(new Occupancy(800, 600), { ...far, maxDrift: 12 })).toBeNull()

@@ -31,6 +31,12 @@ describe('search params', () => {
     expect(back.lens).toBe('#rust')
   })
 
+  it('reads a single bare facet value from a hand-written link', () => {
+    const back = parse(defaultParseSearch('?kind=cli&lang=Rust&tag=wasm'))
+    expect(filtersFromSearch(back)).toEqual({ ...NO_FILTERS, kind: ['cli'], lang: ['Rust'], tag: ['wasm'] })
+    expect(parse(defaultParseSearch('?kind=nonsense')).kind).toBeUndefined()
+  })
+
   it('cuts an over-long query instead of dropping it', () => {
     expect(parse({ q: 'x'.repeat(500) }).q).toHaveLength(200)
   })
