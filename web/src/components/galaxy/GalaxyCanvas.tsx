@@ -4,6 +4,7 @@ import { useGalaxyStore } from '#/state/store'
 import { Animator } from './Animator'
 import { Backdrop } from './Backdrop'
 import { CameraRig } from './CameraRig'
+import { ClusterHull } from './ClusterHull'
 import { Constellations } from './Constellations'
 import { DebugHooks } from './DebugHooks'
 import { Dust } from './Dust'
@@ -40,6 +41,7 @@ export function GalaxyCanvas({ debug }: { debug: boolean }) {
       <Backdrop />
       <Dust center={galaxy.center} />
       <Nebulae galaxy={galaxy} />
+      <ClusterHull galaxy={galaxy} />
       <Constellations galaxy={galaxy} />
       <Stars galaxy={galaxy} />
       <NeighborArcs galaxy={galaxy} />

@@ -10,6 +10,8 @@ import nebulaVert from './nebula.vert.glsl?raw'
 import nebulaFrag from './nebula.frag.glsl?raw'
 import lineVert from './line.vert.glsl?raw'
 import lineFrag from './line.frag.glsl?raw'
+import hullVert from './hull.vert.glsl?raw'
+import hullFrag from './hull.frag.glsl?raw'
 
 const chunks: Record<string, string> = { gs_layout: layout, gs_fog: fog, gs_noise: noise }
 
@@ -37,4 +39,5 @@ export const shaders = {
   dust: { vertexShader: resolveIncludes(dustVert), fragmentShader: resolveIncludes(dustFrag) },
   nebula: { vertexShader: resolveIncludes(nebulaVert), fragmentShader: resolveIncludes(nebulaFrag) },
   line: { vertexShader: resolveIncludes(lineVert), fragmentShader: resolveIncludes(lineFrag) },
+  hull: { vertexShader: hullVert, fragmentShader: hullFrag },
 }
