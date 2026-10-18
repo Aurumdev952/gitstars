@@ -40,7 +40,9 @@ function buildStarBuffers(g: GalaxyIndex) {
   const dyn = restingDyn(g.n)
   const dynAttr = inst(dyn, 4).setUsage(DynamicDrawUsage)
   geo.setAttribute('aDyn', dynAttr)
-  return { geometry: geo, dyn, dynTarget: restingDyn(g.n), dynAttr }
+  const lensAttr = inst(new Float32Array(g.n), 1).setUsage(DynamicDrawUsage)
+  geo.setAttribute('aLens', lensAttr)
+  return { geometry: geo, dyn, dynTarget: restingDyn(g.n), dynAttr, lensAttr }
 }
 
 export function Stars({ galaxy }: { galaxy: GalaxyIndex }) {
@@ -62,10 +64,12 @@ export function Stars({ galaxy }: { galaxy: GalaxyIndex }) {
     sceneBus.dyn = buffers.dyn
     sceneBus.dynTarget = buffers.dynTarget
     sceneBus.dynAttr = buffers.dynAttr
+    sceneBus.lensAttr = buffers.lensAttr
     sceneBus.dynVersion++
     sceneBus.invalidate()
     return () => {
       if (sceneBus.dynAttr === buffers.dynAttr) sceneBus.dynAttr = null
+      if (sceneBus.lensAttr === buffers.lensAttr) sceneBus.lensAttr = null
       buffers.geometry.dispose()
     }
   }, [buffers])

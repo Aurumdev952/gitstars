@@ -1,7 +1,10 @@
 import { create } from 'zustand'
 import { subscribeWithSelector } from 'zustand/middleware'
 import type { GalaxyIndex } from '#/lib/load'
-import { navigateSearch } from './url'
+import { NO_FILTERS, applyFilters, filterColumns, type Filters, type FilterResult } from '#/lib/filters'
+import type { SearchHits } from '#/lib/search'
+import type { Device } from '#/workers/embedder'
+import { navigateSearch, searchFromFilters } from './url'
 
 export type View = '3d' | 'flat' | 'list'
 
@@ -11,28 +14,67 @@ export type Settings = {
   autorotate: boolean
   labels: 'auto' | 'more' | 'none'
   bloom: boolean
+  ghosts: boolean
 }
 
-export type GalaxyStore = {
-  galaxy: GalaxyIndex | null
-  // Mirrored one way from the URL by routes/index.tsx. Never set these directly from UI code.
+/** At most one modal surface is open; Esc closes it before stepping out of the scene. */
+export type Overlay = 'none' | 'palette' | 'filters' | 'settings' | 'shortcuts'
+
+export type ModelStatus =
+  | { state: 'idle' }
+  | { state: 'loading'; progress: number; device: Device | null }
+  | { state: 'ready'; device: Device }
+  | { state: 'error'; message: string }
+
+export type LensState =
+  | { state: 'off' }
+  | { state: 'pending'; query: string }
+  | { state: 'ready'; query: string; weights: Float32Array }
+  | { state: 'error'; query: string; message: string }
+
+export type UrlMirror = {
   selected: number | null
   focusCluster: string | null
   view: View
+  frozen: boolean
+  query: string | null
+  lensQuery: string | null
+  filters: Filters
+}
+
+export type GalaxyStore = UrlMirror & {
+  galaxy: GalaxyIndex | null
+  // Derived from `filters`; null until a galaxy is loaded.
+  filtered: FilterResult | null
   // Transient.
   hovered: number | null
   hoveredCluster: string | null
   cameraBusy: boolean
   dragging: boolean
-  frozen: boolean
+  overlay: Overlay
+  model: ModelStatus
+  hits: SearchHits | null
+  lens: LensState
+  /** The star the Forgotten-star button last surfaced; the panel explains why. */
+  discovered: number | null
   settings: Settings
   actions: {
     setGalaxy(g: GalaxyIndex): void
-    mirrorUrl(m: { selected: number | null; focusCluster: string | null; view: View; frozen: boolean }): void
+    mirrorUrl(m: UrlMirror): void
     hover(i: number | null): void
     hoverCluster(id: string | null): void
     select(i: number | null): void
     focus(id: string | null): void
+    setView(v: View): void
+    setQuery(q: string | null): void
+    setLens(q: string | null): void
+    setFilters(f: Filters): void
+    setOverlay(o: Overlay): void
+    setModel(m: ModelStatus): void
+    setHits(h: SearchHits | null): void
+    setLensState(l: LensState): void
+    setDiscovered(i: number | null): void
+    setSettings(p: Partial<Settings>): void
     setCameraBusy(b: boolean): void
     setDragging(b: boolean): void
   }
@@ -41,36 +83,67 @@ export type GalaxyStore = {
 const prefersReducedMotion = () =>
   typeof matchMedia !== 'undefined' && matchMedia('(prefers-reduced-motion: reduce)').matches
 
+const sameFilters = (a: Filters, b: Filters) => JSON.stringify(a) === JSON.stringify(b)
+
 export const useGalaxyStore = create<GalaxyStore>()(
   subscribeWithSelector((set, get) => ({
     galaxy: null,
     selected: null,
     focusCluster: null,
     view: '3d',
+    frozen: false,
+    query: null,
+    lensQuery: null,
+    filters: NO_FILTERS,
+    filtered: null,
     hovered: null,
     hoveredCluster: null,
     cameraBusy: false,
     dragging: false,
-    frozen: false,
+    overlay: 'none',
+    model: { state: 'idle' },
+    hits: null,
+    lens: { state: 'off' },
+    discovered: null,
     settings: {
       quality: 'high',
       motion: prefersReducedMotion() ? 'reduced' : 'full',
       autorotate: true,
       labels: 'auto',
       bloom: true,
+      ghosts: true,
     },
     actions: {
-      setGalaxy: (galaxy) => set({ galaxy, hovered: null }),
-      mirrorUrl: (m) => set(m),
+      setGalaxy: (galaxy) =>
+        set({ galaxy, hovered: null, hits: null, discovered: null, filtered: applyFilters(filterColumns(galaxy), get().filters) }),
+      mirrorUrl: (m) => {
+        const s = get()
+        const filtersChanged = !sameFilters(m.filters, s.filters)
+        const filters = filtersChanged ? m.filters : s.filters
+        const filtered = s.galaxy && (filtersChanged || !s.filtered) ? applyFilters(filterColumns(s.galaxy), filters) : s.filtered
+        set({ ...m, filters, filtered })
+      },
       hover: (hovered) => {
         if (get().hovered !== hovered) set({ hovered })
       },
-      hoverCluster: (hoveredCluster) => set({ hoveredCluster }),
+      hoverCluster: (hoveredCluster) => {
+        if (get().hoveredCluster !== hoveredCluster) set({ hoveredCluster })
+      },
       select: (i) => {
         const g = get().galaxy
         navigateSearch({ repo: i === null || !g ? undefined : g.repos[i]!.fullName })
       },
       focus: (id) => navigateSearch({ cluster: id ?? undefined, repo: undefined }),
+      setView: (view) => navigateSearch({ view }, { replace: true }),
+      setQuery: (q) => navigateSearch({ q: q?.trim() || undefined }, { replace: true }),
+      setLens: (q) => navigateSearch({ lens: q?.trim() || undefined }, { replace: true }),
+      setFilters: (f) => navigateSearch(searchFromFilters(f), { replace: true }),
+      setOverlay: (overlay) => set({ overlay }),
+      setModel: (model) => set({ model }),
+      setHits: (hits) => set({ hits }),
+      setLensState: (lens) => set({ lens }),
+      setDiscovered: (discovered) => set({ discovered }),
+      setSettings: (p) => set({ settings: { ...get().settings, ...p } }),
       setCameraBusy: (cameraBusy) => set({ cameraBusy }),
       setDragging: (dragging) => set({ dragging }),
     },

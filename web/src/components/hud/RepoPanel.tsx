@@ -1,9 +1,11 @@
 import { useEffect, useRef } from 'react'
 import { AnimatePresence, motion } from 'motion/react'
-import { ArrowUpRight, X } from 'lucide-react'
+import { ArrowUpRight, Compass, X } from 'lucide-react'
 import { useGalaxyStore } from '#/state/store'
 import type { GalaxyIndex } from '#/lib/load'
 import { formatAgo, formatCompact, formatMonthYear, splitFullName } from '#/lib/format'
+import { forgottenReason } from '#/lib/discovery'
+import { toggleValue } from '#/lib/filters'
 import { cn } from '#/lib/utils'
 import { ClusterDot } from './Legend'
 import { useOccluder } from './useOccluder'
@@ -34,7 +36,9 @@ export function RepoPanel() {
 }
 
 function RepoDetails({ g, i }: { g: GalaxyIndex; i: number }) {
-  const { select, focus, hover } = useGalaxyStore((s) => s.actions)
+  const { select, focus, hover, setFilters } = useGalaxyStore((s) => s.actions)
+  const discovered = useGalaxyStore((s) => s.discovered === i)
+  const filters = useGalaxyStore((s) => s.filters)
   const r = g.repos[i]!
   const galaxy = g.galaxies[g.galaxyOf[i]!]!
   const system = g.systems[g.systemOf[i]!]!
@@ -94,8 +98,18 @@ function RepoDetails({ g, i }: { g: GalaxyIndex; i: number }) {
           {r.archived && <Chip className="border-amber-200/20 text-amber-100/80">archived</Chip>}
         </div>
 
-        <p className="mt-4 text-[15px] leading-relaxed text-ink">{r.oneLiner}</p>
-        {r.summary && <p className="mt-2.5 text-[13.5px] leading-[1.65] text-ink-muted">{r.summary}</p>}
+        {discovered && (
+          <p className="mt-4 flex items-start gap-2 rounded-xl border border-starlight/20 bg-starlight/[0.06] px-3 py-2.5 text-[12.5px] leading-snug text-[oklch(0.9_0.07_85)]">
+            <Compass className="mt-px size-3.5 shrink-0" aria-hidden />
+            {forgottenReason(r, now)}
+          </p>
+        )}
+
+        {r.oneLiner && <p className="mt-4 text-[15px] leading-relaxed text-ink">{r.oneLiner}</p>}
+        {r.summary && r.summary !== r.oneLiner && <p className="mt-2.5 text-[13.5px] leading-[1.65] text-ink-muted">{r.summary}</p>}
+        {!r.summary && r.description && r.description !== r.oneLiner && (
+          <p className="mt-2.5 text-[13.5px] leading-[1.65] text-ink-muted">{r.description}</p>
+        )}
 
         <dl className="mt-5 grid grid-cols-2 gap-x-5 gap-y-3.5 border-t border-glass-border pt-4 text-[12.5px]">
           <Fact label="Stars">
@@ -120,9 +134,24 @@ function RepoDetails({ g, i }: { g: GalaxyIndex; i: number }) {
 
         {(r.tags.length > 0 || r.stack.length > 0) && (
           <div className="mt-5 flex flex-wrap gap-1.5 text-[11.5px]">
-            {r.tags.map((t) => (
-              <Chip key={`t-${t}`}>#{t}</Chip>
-            ))}
+            {r.tags.map((t) => {
+              const on = filters.tag.includes(t)
+              return (
+                <button
+                  key={`t-${t}`}
+                  type="button"
+                  aria-pressed={on}
+                  title={on ? `Stop filtering by #${t}` : `Show only stars tagged #${t}`}
+                  onClick={() => setFilters(toggleValue(filters, 'tag', t))}
+                  className={cn(
+                    'inline-flex items-center rounded-full border px-2.5 py-[3px] transition-colors',
+                    on ? 'border-starlight/50 bg-starlight/[0.12] text-ink' : 'border-glass-border bg-white/[0.03] text-ink-muted hover:border-white/15 hover:text-ink',
+                  )}
+                >
+                  #{t}
+                </button>
+              )
+            })}
             {r.stack.map((t) => (
               <Chip key={`s-${t}`} className="text-ink-faint">
                 {t}

@@ -8,6 +8,8 @@ attribute float aCluster;
 uniform float uFocusCluster;
 uniform float uFocusAmt;
 uniform float uNebula;
+uniform float uLens;
+uniform float uGalaxyVis[32];
 
 #include <gs_layout>
 
@@ -32,5 +34,6 @@ void main() {
   vUv = position.xy;
   vColor = aColor;
   vSeed = aSeed;
-  vAlpha = near * focused * uNebula;
+  float members = uGalaxyVis[int(clamp(aCluster, 0.0, 31.0))];
+  vAlpha = near * focused * uNebula * members * (1.0 - 0.75 * uLens);
 }

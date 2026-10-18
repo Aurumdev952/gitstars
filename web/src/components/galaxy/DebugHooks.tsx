@@ -5,6 +5,7 @@ import { useGalaxyStore } from '#/state/store'
 import { director } from './Director'
 import { pickAt } from './PointerPicker'
 import { sceneBus, starScreenPosition } from './sceneBus'
+import { probeSearch, timeQuery } from '#/workers/searchClient'
 
 type DebugApi = {
   ready: boolean
@@ -20,6 +21,10 @@ type DebugApi = {
   focus(id: string | null): void
   /** Renders continuously for `ms` and returns the measured frame rate. */
   measureFps(ms?: number): Promise<{ fps: number; frames: number; drawCalls: number }>
+  /** overlap@10 of the browser model against meta.searchProbes. */
+  probe: typeof probeSearch
+  timeQuery: typeof timeQuery
+  store: typeof useGalaxyStore
   director: typeof director
   bus: typeof sceneBus
   scene: Scene
@@ -82,6 +87,9 @@ export function DebugHooks() {
         const n = frames.current.count - startCount
         return { fps: (n * 1000) / (performance.now() - start), frames: n, drawCalls: api.drawCalls }
       },
+      probe: probeSearch,
+      timeQuery,
+      store: useGalaxyStore,
       director,
       bus: sceneBus,
       scene,

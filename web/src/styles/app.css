@@ -101,6 +101,22 @@
   }
 }
 
+/* Overlays that hold reading text (palette, popovers, dialogs) sit on a denser glass. */
+@utility glass-strong {
+  background: oklch(0.165 0.022 275 / 0.88);
+  backdrop-filter: blur(28px) saturate(1.25);
+  border: 1px solid oklch(1 0 0 / 0.09);
+  box-shadow:
+    inset 0 1px 0 rgb(255 255 255 / 0.07),
+    0 32px 64px -24px rgb(0 0 0 / 0.75),
+    0 0 0 1px rgb(0 0 0 / 0.25);
+
+  @media (prefers-reduced-transparency: reduce), (prefers-contrast: more) {
+    background: var(--color-glass-solid);
+    backdrop-filter: none;
+  }
+}
+
 @utility tabular {
   font-variant-numeric: tabular-nums;
 }

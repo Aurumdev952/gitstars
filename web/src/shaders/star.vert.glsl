@@ -8,6 +8,7 @@ attribute float aStarred;
 attribute vec4 aMeta;   // archived, activity, quality, spikes
 attribute float aDensity;
 attribute vec4 aDyn;    // vis, highlight, focus, pulse
+attribute float aLens;  // concept-lens weight, 0..1
 
 uniform float uTime;
 uniform vec2 uViewport;      // drawing-buffer pixels
@@ -20,6 +21,8 @@ uniform float uBokeh;
 uniform float uTwinkle;
 uniform vec3 uCamVel;
 uniform float uWarp;
+uniform float uLens;
+uniform vec3 uLensRamp[5];
 
 #include <gs_layout>
 #include <gs_fog>
@@ -33,6 +36,13 @@ varying float vIntensity;
 varying float vRing;
 varying float vFog;
 varying float vCoc;
+varying float vWhiten;
+
+vec3 lensRamp(float t) {
+  float x = clamp(t, 0.0, 1.0) * 4.0;
+  int k = int(min(floor(x), 3.0));
+  return mix(uLensRamp[k], uLensRamp[k + 1], x - float(k));
+}
 
 void main() {
   vec3 p = gsLayout(aPos, aPos2, aSeed);
@@ -70,9 +80,16 @@ void main() {
   vUv = position.xy;
   vPx = px;
   vFog = gsFog(viewDist);
-  vColor = mix(aColor, uFogColor * 4.0, vFog * 0.55);
+  // Lensed stars take the ramp colour; the cold end recedes so the hot end reads as a heat map.
+  vec3 base = mix(aColor, lensRamp(aLens) * (0.6 + 0.8 * aLens), uLens);
+  vColor = mix(base, uFogColor * 4.0, vFog * 0.55);
+  // Ghosts (filtered out, vis ~0.3) keep about a tenth of their light.
+  float ghost = mix(0.1, 1.0, smoothstep(0.3, 0.95, vis));
+  float lensLight = mix(1.0, 0.07 + 1.6 * aLens, uLens);
+  // Under the lens the core keeps its ramp colour instead of burning white, so heat reads as hue.
+  vWhiten = mix(0.5, 0.12 + 0.3 * aLens, uLens);
   vHalo = (1.0 - archived * 0.85) / sqrt(max(aDensity, 0.05));
   vIntensity = aBright * twinkle * pulseTerm * (1.0 + flash) * mix(0.25, 1.0, focus) * (1.0 - 0.4 * archived)
-             * (1.0 - 0.7 * vFog) * (1.0 + 0.7 * hi) * step(0.001, vis * born);
+             * (1.0 - 0.7 * vFog) * (1.0 + 0.7 * hi) * ghost * lensLight * step(0.001, vis * born);
   vRing = smoothstep(0.62, 0.85, hi);
 }

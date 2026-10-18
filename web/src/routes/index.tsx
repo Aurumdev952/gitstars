@@ -1,11 +1,15 @@
-import { useEffect } from 'react'
+import { lazy, Suspense, useEffect } from 'react'
 import { ClientOnly, createFileRoute, stripSearchParams, useNavigate } from '@tanstack/react-router'
-import { GalaxyCanvas } from '#/components/galaxy/GalaxyCanvas'
 import { Hud } from '#/components/hud/Hud'
 import { StarMark } from '#/components/hud/TopBar'
 import { GalaxyLoadError, loadGalaxy, resolveDataSource } from '#/lib/load'
 import { useGalaxyStore } from '#/state/store'
-import { bindNavigate, searchDefaults, searchSchema } from '#/state/url'
+import { bindNavigate, filtersFromSearch, searchDefaults, searchSchema } from '#/state/url'
+import { startSearchRunner, warmModel } from '#/workers/searchClient'
+import { seedDiscovery } from '#/state/commands'
+
+// three, R3F and the post chain load in their own chunk, in parallel with galaxy.json.
+const GalaxyCanvas = lazy(() => import('#/components/galaxy/GalaxyCanvas'))
 
 export const Route = createFileRoute('/')({
   validateSearch: searchSchema,
@@ -37,6 +41,16 @@ function Home() {
   }, [galaxy])
 
   useEffect(() => {
+    const stop = startSearchRunner()
+    // The model is a few hundred MB; fetch it once the first frames are on screen.
+    const idle = requestIdleCallback(() => warmModel(), { timeout: 4000 })
+    return () => {
+      cancelIdleCallback(idle)
+      stop()
+    }
+  }, [])
+
+  useEffect(() => {
     const repo = search.repo ? galaxy.byFullName.get(search.repo.toLowerCase()) : undefined
     const focusCluster = search.cluster && galaxy.clusterById.has(search.cluster) ? search.cluster : null
     useGalaxyStore.getState().actions.mirrorUrl({
@@ -44,13 +58,20 @@ function Home() {
       focusCluster,
       view: search.view,
       frozen: search.freeze,
+      query: search.q ?? null,
+      lensQuery: search.lens ?? null,
+      filters: filtersFromSearch(search),
     })
-  }, [galaxy, search.repo, search.cluster, search.view, search.freeze])
+  }, [galaxy, search])
+
+  useEffect(() => seedDiscovery(search.seed ?? null), [search.seed])
 
   return (
     <main className="h-full">
       <ClientOnly>
-        <GalaxyCanvas debug={search.debug} />
+        <Suspense fallback={null}>
+          <GalaxyCanvas debug={search.debug} />
+        </Suspense>
       </ClientOnly>
       <Hud dataName={dataName} />
     </main>

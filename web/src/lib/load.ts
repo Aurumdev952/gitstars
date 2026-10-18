@@ -6,6 +6,8 @@ export type ClusterNode = Cluster & {
   /** Position in `galaxies` or `systems`. */
   index: number
   color: ClusterColor
+  /** Mean of the members' flat-map positions (z = 0), where the label sits in flat view. */
+  centroid2: [number, number, number]
 }
 
 export type StarAttributes = LayoutAttributes & {
@@ -94,7 +96,17 @@ export function buildGalaxyIndex(data: GalaxyData, vectorsUrl = ''): GalaxyIndex
   const n = repos.length
   const galaxyClusters = data.clusters.filter((c) => c.level === 0).sort((a, b) => a.id.localeCompare(b.id))
   const hues = assignGalaxyHues(galaxyClusters.map((c) => c.centroid))
-  const galaxies: ClusterNode[] = galaxyClusters.map((c, index) => ({ ...c, index, color: galaxyColor(hues[index]!) }))
+  const centroid2 = (c: Cluster): [number, number, number] => {
+    let x = 0
+    let y = 0
+    for (const m of c.members) {
+      x += repos[m]!.pos2[0]
+      y += repos[m]!.pos2[1]
+    }
+    const k = Math.max(1, c.members.length)
+    return [x / k, y / k, 0]
+  }
+  const galaxies: ClusterNode[] = galaxyClusters.map((c, index) => ({ ...c, index, color: galaxyColor(hues[index]!), centroid2: centroid2(c) }))
   const galaxyById = new Map(galaxies.map((g) => [g.id, g]))
 
   const systemClusters = data.clusters.filter((c) => c.level === 1).sort((a, b) => a.id.localeCompare(b.id))
@@ -103,7 +115,7 @@ export function buildGalaxyIndex(data: GalaxyData, vectorsUrl = ''): GalaxyIndex
   const systems: ClusterNode[] = systemClusters.map((c, index) => {
     const siblings = siblingsOf.get(c.parentId ?? '')!
     const parent = galaxyById.get(c.parentId ?? '')!
-    return { ...c, index, color: systemColor(parent.color.hue, siblings.indexOf(c), siblings.length) }
+    return { ...c, index, color: systemColor(parent.color.hue, siblings.indexOf(c), siblings.length), centroid2: centroid2(c) }
   })
   const clusterById = new Map<string, ClusterNode>([...galaxies, ...systems].map((c) => [c.id, c]))
 

@@ -3,6 +3,7 @@ import { useGalaxyStore } from '#/state/store'
 import { onFrame, sceneBus, starScreenPosition } from '#/components/galaxy/sceneBus'
 import { formatCompact, splitFullName } from '#/lib/format'
 import { ClusterDot } from './Legend'
+import { useOccluder } from './useOccluder'
 
 const DELAY_MS = 120
 const GAP = 14
@@ -14,6 +15,8 @@ export function HoverTooltip() {
   const g = useGalaxyStore((s) => s.galaxy)
   const [shown, setShown] = useState<number | null>(null)
   const el = useRef<HTMLDivElement>(null)
+  // Repo labels keep clear of the tooltip too.
+  useOccluder(el)
 
   useEffect(() => {
     if (hovered === null) return setShown(null)
@@ -34,9 +37,20 @@ export function HoverTooltip() {
       }
       const w = node.offsetWidth
       const h = node.offsetHeight
-      const flip = p.x + GAP + w > window.innerWidth - 12
-      const x = flip ? p.x - GAP - w : p.x + GAP
       const y = Math.min(window.innerHeight - h - 12, Math.max(12, p.y - h / 2))
+      // Prefer the right of the star; flip left when that would run off screen or under a panel.
+      const self = node.getBoundingClientRect()
+      const blocked = (x: number) =>
+        x < 12 ||
+        x + w > window.innerWidth - 12 ||
+        [...sceneBus.occluders].some((read) => {
+          const r = read()
+          const mine = r !== null && r.left === self.left && r.top === self.top && r.width === self.width
+          return r !== null && !mine && x < r.right && x + w > r.left && y < r.bottom && y + h > r.top
+        })
+      const right = p.x + GAP
+      const left = p.x - GAP - w
+      const x = !blocked(right) || blocked(left) ? right : left
       node.style.transform = `translate3d(${Math.round(x)}px, ${Math.round(y)}px, 0)`
       node.style.opacity = '1'
     })
