@@ -81,6 +81,8 @@ async def test_galaxies_are_named_from_this_runs_system_names(ctx, monkeypatch):
     assert out["systems_named"] == 2 and out["galaxies_named"] == 1
     assert "g07.s03" not in stored, "names for clusters no longer in the layout are dropped"
     assert "Terminal Emulators" in t.prompts[-1] and "Shell Prompts" in t.prompts[-1]
+    first, second = (t.prompts[-1].index(stored[s]["name"]) for s in ("g00.s00", "g00.s01"))
+    assert first < second, "equal-size systems are listed by id, not set order, so the prompt digest is stable"
     lay = ctx.db.get_global("layout")
     assert naming.cluster_name(ctx.db, lay, "g00", lay["names"])["name"] == "Command Line Life"
 

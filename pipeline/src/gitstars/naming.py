@@ -268,7 +268,8 @@ async def run_name(ctx: Ctx, provider: Provider = "openrouter", reserve: int = N
 
         jobs = []
         for gid in sorted(c for c in members_of if "." not in c):
-            children = sorted({layout["system"][i] for i in members_of[gid]}, key=lambda c: -len(members_of[c]))
+            # The id tie-break keeps equal-size systems in one order across processes, so the prompt digest holds.
+            children = sorted({layout["system"][i] for i in members_of[gid]}, key=lambda c: (-len(members_of[c]), c))
             listed = []
             for c in children:
                 nm = cluster_name(ctx.db, layout, c, [names[i] for i in members_of[c]], stored)
