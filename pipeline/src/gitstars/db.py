@@ -138,10 +138,6 @@ class DB:
         ).fetchone()
         return json.loads(row[0]) if row else None
 
-    def latest_artifact(self, stage: str, full_name: str) -> Any | None:
-        row = self.conn.execute("SELECT payload FROM artifacts WHERE stage = ? AND full_name = ?", (stage, full_name)).fetchone()
-        return json.loads(row[0]) if row else None
-
     def put_artifact(self, stage: str, key: CacheKey, payload: Any) -> None:
         with self.conn:
             self.conn.execute(
@@ -192,16 +188,19 @@ class DB:
         return {n: (t, v) for n, t, v in rows}
 
     def embeddings_digest(self, names: list[str]) -> str:
-        """Digest of the texts behind the `cluster` vectors, in `names` order; a layout is valid while this holds."""
+        """Digest of the texts and model version behind the `cluster` vectors, in `names` order; a layout is valid
+        while this holds."""
         shas = self.embedding_shas("cluster")
-        return sha([shas[n][0] for n in names])
+        return sha([list(shas[n]) for n in names])
 
-    def put_embeddings(self, space: str, version: int, rows: Iterable[tuple[str, str, np.ndarray]]) -> None:
+    def put_embeddings(self, version: int, spaces: dict[str, Iterable[tuple[str, str, np.ndarray]]]) -> None:
+        """Every space in one transaction: freshness is judged on `cluster`, so `search` must never lag it."""
         with self.conn:
-            self.conn.executemany(
-                "INSERT OR REPLACE INTO embeddings (full_name, space, version, text_sha, vec) VALUES (?, ?, ?, ?, ?)",
-                [(n, space, version, sha, np.asarray(v, dtype=np.float32).tobytes()) for n, sha, v in rows],
-            )
+            for space, rows in spaces.items():
+                self.conn.executemany(
+                    "INSERT OR REPLACE INTO embeddings (full_name, space, version, text_sha, vec) VALUES (?, ?, ?, ?, ?)",
+                    [(n, space, version, sha, np.asarray(v, dtype=np.float32).tobytes()) for n, sha, v in rows],
+                )
 
     def embedding_matrix(self, space: str, names: list[str]) -> np.ndarray:
         found = dict(

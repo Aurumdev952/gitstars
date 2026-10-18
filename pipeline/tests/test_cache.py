@@ -7,9 +7,9 @@ import pytest
 from rich.console import Console
 
 from gitstars import summarize
-from gitstars.cards import gate_key, load_card, pending_gate_jobs, run_card
+from gitstars.cards import TREE_VERSION, gate_key, load_card, pending_gate_jobs, run_card
 from gitstars.config import Paths
-from gitstars.context import Ctx
+from gitstars.context import Ctx, commit_key
 from gitstars.db import DB
 from gitstars.domain import GateVerdict, ReadmeQuality, Repo, sha
 from gitstars.llm.openrouter import RequestBudget, TransportError
@@ -45,6 +45,13 @@ def repo(name: str, oid: str = "a1", stars: int = 10) -> Repo:
     )
 
 
+def fetched_and_carded(ctx: Ctx) -> None:
+    """What `gs fetch` + `gs card` leave behind for repos with an empty tree."""
+    for r in ctx.db.repos():
+        ctx.db.put_artifact("tree", commit_key(r, TREE_VERSION), {"entries": [], "blobs": []})
+    run_card(ctx)
+
+
 @pytest.fixture
 def ctx(tmp_path):
     db = DB(tmp_path / "t.db")
@@ -60,7 +67,7 @@ def summarized(ctx: Ctx, r: Repo) -> None:
 def test_push_that_keeps_the_card_keeps_gate_and_summary(ctx):
     r = repo("o/a")
     ctx.db.upsert_repos([r])
-    run_card(ctx)
+    fetched_and_carded(ctx)
     card_sha = load_card(ctx.db, r)[1]["input_sha"]
     gate = GateVerdict(keep={}, readme_quality=ReadmeQuality.missing, model="m")
     ctx.db.put_artifact("gate", gate_key(r, card_sha), {"verdict": gate.model_dump(mode="json")})
@@ -68,14 +75,14 @@ def test_push_that_keeps_the_card_keeps_gate_and_summary(ctx):
 
     pushed = r.model_copy(update={"head_oid": "b2"})
     ctx.db.upsert_repos([pushed])
-    run_card(ctx)
+    fetched_and_carded(ctx)
     assert pending_gate_jobs(ctx) == [], "gate verdict survives a push that leaves the card alone"
     assert load_summary(ctx.db, pushed) is not None, "summary survives a push that leaves the card alone"
     assert pending_jobs(ctx) == []
 
     edited = pushed.model_copy(update={"description": "now it does something else entirely"})
     ctx.db.upsert_repos([edited])
-    run_card(ctx)
+    fetched_and_carded(ctx)
     assert load_summary(ctx.db, edited) is None, "a changed card re-summarizes"
     assert [j.repo.full_name for j in pending_jobs(ctx)] == ["o/a"]
 
@@ -83,7 +90,7 @@ def test_push_that_keeps_the_card_keeps_gate_and_summary(ctx):
 def test_prompt_version_is_part_of_the_summary_key(ctx, monkeypatch):
     r = repo("o/a")
     ctx.db.upsert_repos([r])
-    run_card(ctx)
+    fetched_and_carded(ctx)
     summarized(ctx, r)
     monkeypatch.setattr(summarize, "PROMPT_VERSION", 2)
     assert load_summary(ctx.db, r) is None
@@ -116,7 +123,7 @@ def test_legacy_head_oid_rows_are_rekeyed_on_their_digest(tmp_path):
 def test_limit_counts_repos_that_need_work(ctx):
     rs = [repo(f"o/r{i}", stars=100 - i) for i in range(5)]
     ctx.db.upsert_repos(rs)
-    run_card(ctx)
+    fetched_and_carded(ctx)
     for r in rs[:2]:
         summarized(ctx, r)
         card_sha = load_card(ctx.db, r)[1]["input_sha"]
@@ -196,7 +203,7 @@ class CountingTransport:
 async def test_request_budget_caps_hops_and_repairs_across_concurrent_jobs(ctx):
     rs = [repo(f"o/r{i}") for i in range(6)]
     ctx.db.upsert_repos(rs)
-    run_card(ctx)
+    fetched_and_carded(ctx)
     slots = [ModelSlot(f"m{i}:free", rpm=None) for i in range(15)]
     transport = CountingTransport()
     state = RunState("openrouter", Pool(slots, concurrency=15), transport, FakeDecider(), budget=RequestBudget(10))
@@ -210,7 +217,7 @@ async def test_request_budget_caps_hops_and_repairs_across_concurrent_jobs(ctx):
 async def test_a_summary_whose_judge_failed_is_judged_again_without_regenerating(ctx):
     r = repo("o/a")
     ctx.db.upsert_repos([r])
-    run_card(ctx)
+    fetched_and_carded(ctx)
     pool = Pool([ModelSlot("b:free", rpm=None)], concurrency=1)
     decider = FakeDecider(fail_first=2, score=3.5)
     state = RunState("openrouter", pool, RefusingTransport(), decider)
@@ -226,3 +233,12 @@ async def test_a_summary_whose_judge_failed_is_judged_again_without_regenerating
     assert transport.calls == 0, "re-judging spends no summarizer requests"
     assert art["passed"] and art["quality"] == 0.875, "score 3.5 on the 0-based scale is 4.5 of 5"
     assert pending_jobs(ctx) == []
+
+
+def test_no_card_until_the_tree_at_the_current_commit_is_fetched(ctx):
+    r = repo("o/a")
+    ctx.db.upsert_repos([r])
+    fetched_and_carded(ctx)
+    ctx.db.upsert_repos([r.model_copy(update={"head_oid": "b2"})])
+    run_card(ctx)
+    assert load_card(ctx.db, ctx.db.repo("o/a")) is None, "fetch crashed before the new tree landed"

@@ -5,11 +5,11 @@ import numpy as np
 import pytest
 from rich.console import Console
 
-from gitstars.cards import run_card
+from gitstars.cards import TREE_VERSION, run_card
 from gitstars.config import Paths
 from gitstars.context import Ctx, commit_key
 from gitstars.db import DB
-from gitstars.domain import CacheKey, Repo, sha
+from gitstars.domain import CacheKey, Repo
 from gitstars.export import ExportInvalid, build, validate
 from gitstars.llm.schema import Summary, parse_summary
 from gitstars.summarize import job_for
@@ -28,6 +28,13 @@ def repo(name: str, oid: str = "a1", stars: int = 10, starred: str = "2024-01-01
         language="Rust",
         languages=["Rust"],
     )
+
+
+def fetched_and_carded(ctx: Ctx) -> None:
+    """What `gs fetch` + `gs card` leave behind for repos with an empty tree."""
+    for r in ctx.db.repos():
+        ctx.db.put_artifact("tree", commit_key(r, TREE_VERSION), {"entries": [], "blobs": []})
+    run_card(ctx)
 
 
 @pytest.fixture
@@ -77,9 +84,9 @@ def _seed_export(db: DB, n: int = 3) -> None:
     rng = np.random.default_rng(0)
     vecs = rng.normal(size=(n, 768)).astype(np.float32)
     vecs /= np.linalg.norm(vecs, axis=1, keepdims=True)
-    db.put_embeddings("cluster", 1, [(nm, f"t{i}", vecs[i]) for i, nm in enumerate(names)])
-    db.put_embeddings("search", 1, [(nm, f"t{i}", vecs[i]) for i, nm in enumerate(names)])
-    run_card(Ctx(paths=Paths(Path("."), Path(".")), db=db, console=Console()))
+    rows = [(nm, f"t{i}", vecs[i]) for i, nm in enumerate(names)]
+    db.put_embeddings(1, {"cluster": rows, "search": rows})
+    fetched_and_carded(Ctx(paths=Paths(Path("."), Path(".")), db=db, console=Console()))
     summary = Summary(
         one_liner="Does r1 things",
         summary="r1 does specific things well.",
@@ -96,7 +103,7 @@ def _seed_export(db: DB, n: int = 3) -> None:
         "layout",
         {
             "names": names,
-            "input_sha": sha([f"t{i}" for i in range(n)]),
+            "input_sha": db.embeddings_digest(names),
             "galaxy": ["g00"] * n,
             "system": ["g00.s00", "g00.s00", "g00.s01"],
             "outlier": [False, False, True],

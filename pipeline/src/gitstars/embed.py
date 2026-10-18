@@ -128,8 +128,13 @@ def run_embed(ctx: Ctx) -> dict:
         # prompt="" so a model-level default prompt can't sneak in; the doc prefix is already in the text.
         search = encode(model, docs, prompt="")
         encode_s = time.monotonic() - t1
-        ctx.db.put_embeddings("cluster", EMBED_VERSION, [(r.full_name, s, v) for (r, _, s), v in zip(pending, cluster)])
-        ctx.db.put_embeddings("search", EMBED_VERSION, [(r.full_name, s, v) for (r, _, s), v in zip(pending, search)])
+        ctx.db.put_embeddings(
+            EMBED_VERSION,
+            {
+                "cluster": [(r.full_name, s, v) for (r, _, s), v in zip(pending, cluster)],
+                "search": [(r.full_name, s, v) for (r, _, s), v in zip(pending, search)],
+            },
+        )
     else:
         encode_s = 0.0
     if model is not None:

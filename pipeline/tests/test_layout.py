@@ -59,3 +59,11 @@ def test_ctfidf_prefers_distinctive_shared_terms():
     assert out["a"][:2] == ["llm", "inference"]
     assert out["b"][:2] == ["react", "ui"]
     assert "cuda" not in out["a"], "a term in one member of a 4+ cluster lacks support"
+
+
+def test_top_neighbors_with_fewer_repos_than_k_never_lists_self():
+    v = np.eye(4, dtype=np.float32)
+    nb = top_neighbors(v, k=8)
+    assert [len(row) for row in nb] == [3, 3, 3, 3]
+    assert all(j != i and np.isfinite(c) for i, row in enumerate(nb) for j, c in row)
+    assert top_neighbors(v[:1], k=8) == [[]]

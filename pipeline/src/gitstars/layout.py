@@ -38,9 +38,12 @@ def normalize_positions(xyz: np.ndarray, extent: float = EXTENT) -> np.ndarray:
 
 def top_neighbors(vectors: np.ndarray, k: int = NEIGHBORS) -> list[list[tuple[int, float]]]:
     """Exact top-k cosine neighbours (vectors are unit-norm), self excluded, sorted desc."""
+    k = min(k, len(vectors) - 1)
+    if k <= 0:
+        return [[] for _ in vectors]
     sims = vectors @ vectors.T
     np.fill_diagonal(sims, -np.inf)
-    idx = np.argpartition(-sims, kth=min(k, len(vectors) - 1) - 1, axis=1)[:, :k]
+    idx = np.argpartition(-sims, kth=k - 1, axis=1)[:, :k]
     out = []
     for i, row in enumerate(idx):
         row = sorted(row, key=lambda j: -sims[i, j])

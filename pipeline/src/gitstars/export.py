@@ -197,10 +197,11 @@ def run_export(ctx: Ctx) -> dict:
     stats = ctx.db.get_global("fetch") or {}
     doc, vecs = build(ctx.db, stats.get("viewer") or VIEWER)
     validate(doc)
-    body = json.dumps(doc, separators=(",", ":"), ensure_ascii=False).encode()
+    body = json.dumps(doc, separators=(",", ":"), ensure_ascii=False, allow_nan=False).encode()
     f16 = np.ascontiguousarray(vecs.astype("<f2"))
-    write_atomic(ctx.paths.export / "galaxy.json", body)
+    # galaxy.json is the commit point: the web app reads it first, so it must never describe vectors not yet written.
     write_atomic(ctx.paths.export / "vectors.f16.bin", f16.tobytes())
+    write_atomic(ctx.paths.export / "galaxy.json", body)
     ctx.db.put_global("export", {"at": doc["meta"]["generatedAt"], "counts": doc["meta"]["counts"], "sha": sha(body.decode())})
     return {
         "path": str(ctx.paths.export / "galaxy.json"),

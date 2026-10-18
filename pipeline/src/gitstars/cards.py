@@ -181,8 +181,11 @@ def homepage_doc(db: DB, repo: Repo) -> HomepageDoc | None:
     return HomepageDoc.model_validate(cached["doc"]) if cached and cached.get("doc") else None
 
 
-def make_card(db: DB, repo: Repo) -> Card:
-    tree_art = db.latest_artifact("tree", repo.full_name)
+def make_card(db: DB, repo: Repo) -> Card | None:
+    """None until the tree at the current commit is fetched, so a half-finished fetch can't yield a README-less card."""
+    tree_art = db.get_artifact("tree", commit_key(repo, TREE_VERSION))
+    if tree_art is None and repo.head_oid:
+        return None
     entries = [TreeEntry.model_validate(e) for e in tree_art["entries"]] if tree_art else []
     return build_card(repo, entries, db.blobs(repo.full_name, repo.head_oid), homepage_doc(db, repo))
 
@@ -193,6 +196,8 @@ def run_card(ctx: Ctx) -> dict:
     changed = 0
     for repo in repos:
         card = make_card(ctx.db, repo)
+        if card is None:
+            continue
         card_sha = sha(card.model_dump(mode="json"))
         cached = ctx.cached("card", commit_key(repo, CARD_VERSION))
         if cached is None or cached["input_sha"] != card_sha:
