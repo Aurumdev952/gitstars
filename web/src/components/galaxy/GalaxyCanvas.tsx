@@ -1,5 +1,5 @@
-import { Suspense } from 'react'
-import { Canvas } from '@react-three/fiber'
+import { Suspense, useEffect } from 'react'
+import { Canvas, useThree } from '@react-three/fiber'
 import { useGalaxyStore } from '#/state/store'
 import { Animator } from './Animator'
 import { Backdrop } from './Backdrop'
@@ -35,6 +35,7 @@ export function GalaxyCanvas({ debug }: { debug: boolean }) {
       camera={{ fov: 50, near: 0.5, far: 6000, position: [0, 80, 320] }}
     >
       <SceneDriver />
+      <BackdropFrame hidden={hidden} />
       <Backdrop />
       <Dust center={galaxy.center} />
       <Nebulae galaxy={galaxy} />
@@ -53,4 +54,22 @@ export function GalaxyCanvas({ debug }: { debug: boolean }) {
       {debug && <DebugHooks />}
     </Canvas>
   )
+}
+
+/**
+ * With frameloop 'never' a list view opened by deep link would sit on a black canvas; draw a few
+ * frames (the post chain needs more than one) so the glass list has the galaxy behind it.
+ */
+function BackdropFrame({ hidden }: { hidden: boolean }) {
+  const advance = useThree((s) => s.advance)
+  useEffect(() => {
+    if (!hidden) return
+    let frames = 0
+    let raf = requestAnimationFrame(function tick(t) {
+      advance(t)
+      if (++frames < 3) raf = requestAnimationFrame(tick)
+    })
+    return () => cancelAnimationFrame(raf)
+  }, [hidden, advance])
+  return null
 }
