@@ -26,9 +26,20 @@ GALAXY_TARGET_WEIGHT = 0.3
 GALAXY_GAP = 1.7
 GALAXY_GAP_QUANTILE = 0.25
 SEED = 42
+CENTER = False
 NEIGHBORS = 8
 GALAXY_RANGE = (10, 16)
 EXTENT = 100.0
+
+
+def cluster_space(vectors: np.ndarray) -> np.ndarray:
+    """The space systems are found in. Measured on the 2,284 stars: the corpus mean has norm 0.88 and every pair
+    sits at cosine 0.65-0.85, so the raw cone hides the density structure. Subtracting the mean and renormalizing
+    spreads pairs over -0.2..0.25."""
+    if not CENTER:
+        return vectors
+    v = vectors - vectors.mean(axis=0)
+    return v / np.linalg.norm(v, axis=1, keepdims=True).clip(min=1e-12)
 
 
 @dataclass
@@ -164,13 +175,19 @@ def place(vectors: np.ndarray, galaxy: np.ndarray, dims: int) -> np.ndarray:
     return normalize_positions(separate_galaxies(reducer.fit_transform(vectors, y=galaxy), galaxy))
 
 
-def compute(vectors: np.ndarray, names: list[str]) -> Layout:
+def cluster(vectors: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
+    """(system label per repo, outlier flag per repo)."""
     import umap
     from sklearn.cluster import HDBSCAN
 
     reduced = umap.UMAP(n_components=10, metric="cosine", n_neighbors=15, min_dist=0.0, random_state=SEED).fit_transform(vectors)
     labels = HDBSCAN(min_cluster_size=MIN_CLUSTER_SIZE, min_samples=MIN_SAMPLES).fit_predict(reduced)
-    system, outlier = vote_noise(labels, vectors)
+    return vote_noise(labels, vectors)
+
+
+def finish(vectors: np.ndarray, names: list[str], system: np.ndarray, outlier: np.ndarray) -> Layout:
+    """Galaxies, positions and neighbours for a given system membership, so a membership changed after
+    clustering (`gs reassign`) gets positions that follow it."""
     gal = galaxies_for(system, vectors)
     galaxy = np.array([gal[s] for s in system.tolist()])
     return Layout(
@@ -182,6 +199,11 @@ def compute(vectors: np.ndarray, names: list[str]) -> Layout:
         pos2=place(vectors, galaxy, 2),
         neighbors=top_neighbors(vectors),
     )
+
+
+def compute(vectors: np.ndarray, names: list[str]) -> Layout:
+    system, outlier = cluster(vectors)
+    return finish(vectors, names, system, outlier)
 
 
 def assign_ids(layout: Layout) -> tuple[list[str], list[str]]:
@@ -204,33 +226,36 @@ def assign_ids(layout: Layout) -> tuple[list[str], list[str]]:
     return galaxies, systems
 
 
-def run_layout(ctx: Ctx) -> dict:
-    repos = ctx.db.repos(order="starred")
-    names = [r.full_name for r in repos]
-    vectors = ctx.db.embedding_matrix("cluster", names)
-    t0 = time.monotonic()
-    layout = compute(vectors, names)
+def store_layout(ctx: Ctx, layout: Layout, extra: dict | None = None) -> dict:
+    """Write the layout global with size-ordered ids and c-TF-IDF names; returns the summary `gs layout` prints."""
+    repos = {r.full_name: r for r in ctx.db.repos()}
     galaxies, systems = assign_ids(layout)
-    terms = [repo_terms(ctx.db, r) for r in repos]
-    names_by_cluster = ctfidf_names(terms, galaxies, systems)
+    terms = [repo_terms(ctx.db, repos[n]) for n in layout.names]
     payload = {
         "version": LAYOUT_VERSION,
-        "names": names,
-        "input_sha": ctx.db.embeddings_digest(names),
+        "names": layout.names,
+        "input_sha": ctx.db.embeddings_digest(layout.names),
         "galaxy": galaxies,
         "system": systems,
         "outlier": layout.outlier.tolist(),
         "pos": np.round(layout.pos, 3).tolist(),
         "pos2": np.round(layout.pos2, 3).tolist(),
         "neighbors": layout.neighbors,
-        "ctfidf": names_by_cluster,
+        "ctfidf": ctfidf_names(terms, galaxies, systems),
+        **(extra or {}),
     }
     ctx.db.put_global("layout", payload)
-    gal_set, sys_set = sorted(set(galaxies)), sorted(set(systems))
     return {
-        "repos": len(names),
-        "galaxies": len(gal_set),
-        "systems": len(sys_set),
+        "repos": len(layout.names),
+        "galaxies": len(set(galaxies)),
+        "systems": len(set(systems)),
         "outliers": int(layout.outlier.sum()),
-        "seconds": round(time.monotonic() - t0, 1),
     }
+
+
+def run_layout(ctx: Ctx) -> dict:
+    names = [r.full_name for r in ctx.db.repos(order="starred")]
+    vectors = cluster_space(ctx.db.embedding_matrix("cluster", names))
+    t0 = time.monotonic()
+    layout = compute(vectors, names)
+    return {**store_layout(ctx, layout), "seconds": round(time.monotonic() - t0, 1)}

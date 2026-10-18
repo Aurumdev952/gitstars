@@ -89,10 +89,12 @@ def separation(pos: np.ndarray, galaxy: np.ndarray) -> dict[str, float]:
 
 
 def stored_layout_metrics(db: DB) -> dict[str, Any]:
+    from gitstars.layout import cluster_space
+
     lay = db.get_global("layout")
     if not lay:
         raise RuntimeError("no layout; run `gs layout` first")
-    vectors = db.embedding_matrix("cluster", lay["names"])
+    vectors = cluster_space(db.embedding_matrix("cluster", lay["names"]))
     galaxy = np.asarray(lay["galaxy"])
     return {
         **coherence(vectors, np.asarray(lay["system"]), galaxy, np.asarray(lay["outlier"], dtype=bool)),
