@@ -13,6 +13,7 @@ from rich.table import Table
 from rich.text import Text
 
 from gitstars.cards import gate_key, load_card, load_gate
+from gitstars.coherence import stored_layout_metrics
 from gitstars.config import Paths, Provider, openrouter_key
 from gitstars.context import Ctx, commit_key
 from gitstars.db import DB
@@ -206,6 +207,18 @@ def report(samples: int = 5) -> None:
             top = sorted(sm, key=lambda i: -repos[names[i]].stars)[:samples]
             outl = sum(lay["outlier"][i] for i in sm)
             console.print(f"  [cyan]{s}[/] {escape(sn['name'])}  ({len(sm)}, {outl} outliers): " + escape(", ".join(names[i] for i in top)))
+
+
+@app.command()
+def coherence() -> None:
+    """Coherence of the stored layout: 8-NN same-system rates, kNN modularity, centroid cosine, galaxy separation."""
+    ctx = _ctx()
+    t0 = time.monotonic()
+    try:
+        result = {k: round(v, 4) if isinstance(v, float) else v for k, v in stored_layout_metrics(ctx.db).items()}
+    finally:
+        ctx.db.close()
+    _print_result("coherence", result, time.monotonic() - t0)
 
 
 @app.command()
