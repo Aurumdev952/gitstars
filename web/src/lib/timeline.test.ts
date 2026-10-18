@@ -24,7 +24,7 @@ const range = toStarredRange(['2020-01-01T00:00:00Z', '2024-01-01T00:00:00Z'])
 const at = (starred: number[]): LayoutAttributes => ({
   pos: new Float32Array(starred.length * 3),
   pos2: new Float32Array(starred.length * 3),
-  seed: new Float32Array(starred.length),
+  delay: new Float32Array(starred.length),
   starred: Float32Array.from(starred),
 })
 const born = (a: LayoutAttributes, i: number, c: number) =>
