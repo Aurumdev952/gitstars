@@ -40,6 +40,8 @@ def test_gate_request_shape():
     assert rq["type"] == "choice" and set(rq["criteria"]) == {"rich", "partial", "template", "missing"}
     assert len(body["state"]["candidates"]["readme"]) == 600, "the gate sees previews only"
     assert "manifest" not in body["state"]["candidates"]
+    assert len(body["state"]["readme_head"]) == 1600, "readme_quality reads a longer head than the preview"
+    assert "`readme_head`" in rq["instructions"]
 
 
 def test_judge_request_uses_score_levels():

@@ -89,6 +89,8 @@ class DecisionError(RuntimeError):
 # ---- gate -------------------------------------------------------------------------------------------------
 
 GATED = [c for c in CandidateId if c is not CandidateId.manifest]
+# readme_quality on the 600-char preview called most rich READMEs "partial" (24 of the 30 most-starred).
+README_QUALITY_CHARS = 3000
 
 
 def gate_request(card: Card) -> DecisionRequest:
@@ -97,6 +99,7 @@ def gate_request(card: Card) -> DecisionRequest:
         "repository": card.full_name,
         "description": card.description or "",
         "candidates": {cid.value: c.preview for cid, c in gated.items()},
+        "readme_head": card.candidate_text(CandidateId.readme)[:README_QUALITY_CHARS],
     }
     questions: dict[str, Question] = {
         f"keep_{cid.value}": NoulQuestion(
@@ -111,7 +114,7 @@ def gate_request(card: Card) -> DecisionRequest:
         for cid in gated
     }
     questions["readme_quality"] = ChoiceQuestion(
-        instructions="How well does `candidates.readme` explain what the repository `repository` is and does?",
+        instructions="How well does `readme_head`, the start of the README, explain what the repository `repository` is and does?",
         criteria={
             "rich": "It explains the project's purpose and features in specific detail.",
             "partial": "It says what the project is but gives little specific detail.",
