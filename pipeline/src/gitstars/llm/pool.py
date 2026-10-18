@@ -18,6 +18,7 @@ MIN_PARAMS_B = 8.0
 MIN_UPTIME = 80.0
 POOL_SIZE = 15
 POLL_SECONDS = 0.5
+MAX_COOLDOWN_SECONDS = 300.0
 
 
 class Clock(Protocol):
@@ -45,6 +46,7 @@ class ModelSlot:
     in_flight: int = 0
     starts: deque[float] = field(default_factory=deque)
     consecutive_failures: int = 0
+    consecutive_rate_limits: int = 0
     benched_until: float = 0.0
     cooldown_until: float = 0.0
     ok: int = 0
@@ -87,11 +89,17 @@ class ModelSlot:
         if success:
             self.ok += 1
             self.consecutive_failures = 0
+            self.consecutive_rate_limits = 0
             return
         self.failed += 1
-        self.consecutive_failures += 1
         if retry_after:
-            self.cooldown_until = max(self.cooldown_until, now + retry_after)
+            # A 429 says "slower", not "broken": back off exponentially instead of benching. Counting 429s toward
+            # the bench benched every free model at once in a 429 storm and stalled the run for ten minutes.
+            self.consecutive_rate_limits += 1
+            wait = min(MAX_COOLDOWN_SECONDS, max(retry_after, retry_after * 2 ** (self.consecutive_rate_limits - 1)))
+            self.cooldown_until = max(self.cooldown_until, now + wait)
+            return
+        self.consecutive_failures += 1
         if self.consecutive_failures >= BENCH_AFTER_FAILURES:
             self.benched_until = now + BENCH_SECONDS
             self.consecutive_failures = 0

@@ -139,3 +139,20 @@ async def test_global_concurrency_and_in_flight_cap():
     await pool.acquire()
     with pytest.raises(PoolExhausted):
         await pool.acquire(max_wait=5)
+
+
+async def test_rate_limits_back_off_exponentially_and_never_bench():
+    clock = FakeClock()
+    a = ModelSlot("a", rpm=None)
+    pool = Pool([a], concurrency=15, clock=clock)
+    waits = []
+    for _ in range(5):
+        s = await pool.acquire()
+        pool.release(s, False, retry_after=30)
+        waits.append(a.cooldown_until - clock.now())
+        clock.t = a.cooldown_until
+    assert waits == [30, 60, 120, 240, 300]
+    assert a.benched_until == 0.0, "429s alone never bench a model"
+    pool.release(await pool.acquire(), True)
+    pool.release(await pool.acquire(), False, retry_after=30)
+    assert a.cooldown_until - clock.now() == 30, "a success resets the backoff"

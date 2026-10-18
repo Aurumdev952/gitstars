@@ -31,7 +31,7 @@ MAX_MODEL_HOPS = 6
 JOBS_IN_FLIGHT = 30
 QUOTA_CHECK_EVERY = 25
 # A job that finds no untried model with capacity for this long is left for a later run.
-MODEL_WAIT_S = 120.0
+MODEL_WAIT_S = 600.0
 
 
 @dataclass
