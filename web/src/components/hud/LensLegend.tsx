@@ -30,7 +30,7 @@ export function LensLegend() {
           initial={{ opacity: 0, y: 12 }}
           animate={{ opacity: 1, y: 0 }}
           exit={{ opacity: 0, y: 12 }}
-          className="glass fixed bottom-5 left-1/2 z-10 w-[min(380px,calc(100vw-2rem))] -translate-x-1/2 rounded-[var(--radius-panel)] px-4 pt-3 pb-3.5"
+          className="glass fixed bottom-[calc(1.25rem+var(--timeline-h,0px))] left-1/2 z-10 w-[min(380px,calc(100vw-2rem))] -translate-x-1/2 rounded-[var(--radius-panel)] px-4 pt-3 pb-3.5"
         >
           <div className="flex items-center gap-2 text-[12.5px]">
             <span className="text-ink-faint">Lens</span>

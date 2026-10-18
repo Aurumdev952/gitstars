@@ -14,6 +14,7 @@ import { RepoPanel } from './RepoPanel'
 import { SearchPalette } from './SearchPalette'
 import { ShortcutsDialog } from './ShortcutsDialog'
 import { StarReticle } from './StarReticle'
+import { Timeline } from './Timeline'
 import { TopBar } from './TopBar'
 
 export function Hud({ dataName }: { dataName: string }) {
@@ -44,6 +45,7 @@ export function Hud({ dataName }: { dataName: string }) {
           <StarReticle variant="selected" />
           <HoverTooltip />
           <LensLegend />
+          <Timeline />
           <DiscoverButton />
         </>
       )}
