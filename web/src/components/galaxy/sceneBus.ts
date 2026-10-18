@@ -42,6 +42,8 @@ export const sceneBus = {
   labelClock: Infinity,
   /** Orbit distance of the home framing, which the label pass reads as "zoom 1". */
   homeDistance: 0,
+  /** What uWarp eases toward; the Director raises it for the length of a long flight. */
+  warpTarget: 0,
 }
 
 export function currentLayout(): LayoutUniforms {

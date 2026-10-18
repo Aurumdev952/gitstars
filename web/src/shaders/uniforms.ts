@@ -35,6 +35,8 @@ export function createSceneUniforms() {
     uTwinkle: u(1),
     uCamVel: u(vec3(0, 0, 0)),
     uWarp: u(0),
+    /** Birth overshoot and flash on the timeline; 0 under reduced motion. */
+    uBirthPop: u(1),
     uLens: u(0),
     uLensRamp: u(Float32Array.from(LENS_RAMP.flat())),
     /** Nebula focus: the galaxy index to keep, and how strongly the others fade. */

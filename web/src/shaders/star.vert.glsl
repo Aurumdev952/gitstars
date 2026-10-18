@@ -22,6 +22,7 @@ uniform float uBokeh;
 uniform float uTwinkle;
 uniform vec3 uCamVel;
 uniform float uWarp;
+uniform float uBirthPop;
 uniform float uLens;
 uniform vec3 uLensRamp[5];
 
@@ -38,6 +39,8 @@ varying float vRing;
 varying float vFog;
 varying float vCoc;
 varying float vWhiten;
+varying float vTrail;
+varying float vDead;
 
 vec3 lensRamp(float t) {
   float x = clamp(t, 0.0, 1.0) * 4.0;
@@ -59,30 +62,55 @@ void main() {
   vec4 mv = modelViewMatrix * vec4(p, 1.0);
   float viewDist = max(0.001, -mv.z);
 
-  // Mirrored by lib/layout.ts starPixelRadius().
-  float worldSize = uSizeScale * mix(0.6, 2.4, aSize) * (1.0 + 0.6 * hi) * vis * born;
+  // Births scale 0 → ~1.2 → 1 and flash; reduced motion keeps the plain ramp.
+  float grown = born + uBirthPop * 2.5 * born * (1.0 - born);
+  float flash = uBirthPop * born * (1.0 - born) * 4.0;
+
+  // Mirrored by lib/layout.ts starPixelRadius() (without the birth overshoot).
+  float worldSize = uSizeScale * mix(0.6, 2.4, aSize) * (1.0 + 0.6 * hi) * vis * grown;
   float px = worldSize * projectionMatrix[1][1] * 0.5 * uViewport.y / viewDist;
-  px = clamp(px, uMinPx * uPixelRatio * vis * born, uMaxPx * uPixelRatio);
+  px = clamp(px, uMinPx * uPixelRatio * vis * grown, uMaxPx * uPixelRatio);
 
-  vCoc = clamp(uBokeh * abs(viewDist - uFocusDist) / max(uFocusDist, 1.0), 0.0, 1.0);
-  px *= 1.0 + 1.5 * vCoc;
+  // Circle of confusion around the focus distance: out-of-focus stars open into bokeh discs.
+  vCoc = clamp(uBokeh * abs(viewDist - uFocusDist) / max(uFocusDist, 1.0), 0.0, 0.8);
+  px *= 1.0 + 0.9 * vCoc;
 
-  vSpikeScale = 1.0 + 1.6 * spikes;
+  vSpikeScale = 1.0 + 1.6 * spikes * (1.0 - uWarp);
   float extent = px * vSpikeScale;
 
   vec4 clip = projectionMatrix * mv;
-  clip.xy += position.xy * extent * 2.0 / uViewport * clip.w;
+
+  // Warp: stretch the sprite along its own screen motion over the last few frames of a long
+  // flight, so stars streak radially past a forward dolly and sideways past a pan.
+  vec2 streak = vec2(0.0);
+  if (uWarp > 0.001) {
+    vec3 before = mv.xyz + mat3(viewMatrix) * uCamVel * 0.1;
+    vec4 pc = projectionMatrix * vec4(before, 1.0);
+    if (pc.w > 0.001) streak = (clip.xy / clip.w - pc.xy / pc.w) * 0.5 * uViewport * uWarp;
+    float len = length(streak);
+    if (len > 260.0) streak *= 260.0 / len;
+  }
+  float trailPx = length(streak);
+  vec2 along = trailPx > 0.5 ? streak / trailPx : vec2(1.0, 0.0);
+  vec2 across = vec2(-along.y, along.x);
+  // Half the trail in sprite units; the quad grows by it on both ends and slides back by it.
+  vTrail = 0.5 * trailPx / max(extent, 1e-3);
+  vec2 offset = (along * position.x * (1.0 + vTrail) + across * position.y) * extent - 0.5 * streak;
+  clip.xy += offset * 2.0 / uViewport * clip.w;
   gl_Position = clip;
 
-  float flash = born * (1.0 - born) * 4.0;
   float twinkle = 1.0 + uTwinkle * activity * (1.0 - archived) * 0.22 * sin(uTime * (1.3 + 2.0 * aSeed) + 6.2831 * aSeed);
   float pulseTerm = 1.0 + 0.6 * pulse * (0.5 + 0.5 * sin(uTime * 6.0));
 
-  vUv = position.xy;
+  vUv = vec2(position.x * (1.0 + vTrail), position.y);
+  vDead = archived;
   vPx = px;
   vFog = gsFog(viewDist);
   // Lensed stars take the ramp colour; the cold end recedes so the hot end reads as a heat map.
   vec3 base = mix(aColor, lensRamp(aLens) * (0.6 + 0.8 * aLens), uLens);
+  // Dead stars (archived) burn down to a cool ember grey.
+  float grey = dot(base, vec3(0.2126, 0.7152, 0.0722));
+  base = mix(base, grey * vec3(1.05, 0.86, 0.78), archived * 0.8);
   vColor = mix(base, uFogColor * 4.0, vFog * 0.55);
   // Ghosts (filtered out, vis ~0.3) keep about a tenth of their light.
   float ghost = mix(0.1, 1.0, smoothstep(0.3, 0.95, vis));
@@ -90,7 +118,9 @@ void main() {
   // Under the lens the core keeps its ramp colour instead of burning white, so heat reads as hue.
   vWhiten = mix(0.5, 0.12 + 0.3 * aLens, uLens);
   vHalo = (1.0 - archived * 0.85) / sqrt(max(aDensity, 0.05));
-  vIntensity = aBright * twinkle * pulseTerm * (1.0 + flash) * mix(0.25, 1.0, focus) * (1.0 - 0.4 * archived)
+  // A streak spreads the same light over a longer sprite.
+  float spread = 1.0 / sqrt(1.0 + vTrail);
+  vIntensity = aBright * twinkle * pulseTerm * (1.0 + 2.0 * flash) * spread * mix(0.25, 1.0, focus) * (1.0 - 0.4 * archived)
              * (1.0 - 0.7 * vFog) * (1.0 + 0.7 * hi) * ghost * lensLight * step(0.001, vis * born);
   vRing = smoothstep(0.62, 0.85, hi);
 }

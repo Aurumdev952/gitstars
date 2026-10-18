@@ -127,9 +127,9 @@ export const director = {
     c.getTarget(v)
     const a = animated(animate)
     if (a && v.distanceTo(p) > LONG_FLIGHT) {
-      if (warpAllowed()) sceneBus.uniforms.uWarp.value = 1
+      if (warpAllowed()) sceneBus.warpTarget = 1
       await Promise.all([c.setTarget(p.x, p.y, p.z, true), c.dollyTo(c.distance * 1.2, true)])
-      sceneBus.uniforms.uWarp.value = 0
+      sceneBus.warpTarget = 0
       if (!alive()) return
     }
     await c.fitToSphere(sphere, a)
