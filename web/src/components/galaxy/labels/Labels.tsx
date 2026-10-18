@@ -4,9 +4,10 @@ import { useFrame } from '@react-three/fiber'
 import { Color, LinearSRGBColorSpace, Vector3, type Group, type PerspectiveCamera } from 'three'
 import type { ClusterNode, GalaxyIndex } from '#/lib/load'
 import { sceneTheme } from '#/lib/theme'
-import { Occupancy, clusterSlots, hysteresis, place, starSlots, type LabelBox } from '#/lib/labelLayout'
-import { positionAt, starPixelRadius } from '#/lib/layout'
-import { projectPoint } from '#/lib/picking'
+import { labelReveal } from '#/lib/intro'
+import { Occupancy, clusterSlots, hysteresis, place, starSlots, type LabelBox, type Rect, type Slot } from '#/lib/labelLayout'
+import { positionAt, starPixelRadius, type StarSizeUniforms } from '#/lib/layout'
+import { projectPoint, type Projector, type ScreenPoint } from '#/lib/picking'
 import { useGalaxyStore } from '#/state/store'
 import { currentLayout, currentProjector, sceneBus } from '../sceneBus'
 
@@ -31,17 +32,67 @@ type ClusterLabel = {
   /** Last placement slot, for hysteresis; null while hidden. */
   slot: number | null
   shown: boolean
+  /** Placed in this frame's occupancy pass. */
+  placed: boolean
   alpha: number
+  /** Scratch for this frame's sort keys: camera distance (galaxies) or projected radius (systems). */
+  key: number
+  /** Galaxy labels arrive one by one at the end of the intro; this is the delay in the stagger. */
+  order: number
 }
 
+type RepoState = {
+  lastPick: number
+  candidates: number[]
+  slotOf: Map<number, number>
+  starOf: (number | null)[]
+  alpha: number[]
+  placed: Map<number, number>
+  /** The map being filled this frame; swapped with `placed` at the end. */
+  next: Map<number, number>
+  width: Map<number, number>
+  /** The DOM pool these assignments belong to; a remounted pool starts empty. */
+  pool: HTMLElement[] | null
+  recheck: ReturnType<typeof setTimeout> | 0
+}
+
+// Per-frame scratch. The label pass runs every frame over up to 10k stars, so nothing in it
+// allocates: rects, slots, boxes and screen points are reused.
 const scratch: [number, number, number] = [0, 0, 0]
+const screen: ScreenPoint = { x: 0, y: 0, viewDist: 0 }
 const anchor = new Vector3()
 const viewPos = new Vector3()
 const up = new Vector3()
 const right = new Vector3()
+const rect: Rect = { x0: 0, y0: 0, x1: 0, y1: 0 }
+const repoSlots: Slot[] = starSlots(0, 0, 0)
+const labelSlots: Slot[] = clusterSlots(0, 0)
+const box: LabelBox = { x: 0, y: 0, w: 0, h: 0, slots: repoSlots, prev: null, pad: 0 }
+const dims = { w: 0, h: 0 }
+const sizes: StarSizeUniforms = { sizeScale: 1, minPx: 1, maxPx: 1 }
+const TOP = REPO.candidates
+const topIdx = new Int32Array(TOP)
+const topScore = new Float64Array(TOP)
+const byKeyAsc = (a: ClusterLabel, b: ClusterLabel) => a.key - b.key
+const byKeyDesc = (a: ClusterLabel, b: ClusterLabel) => b.key - a.key
 
 function inkTint([r, g, b]: readonly number[], white: number) {
   return new Color().setRGB(white + r! * (1 - white), white + g! * (1 - white), white + b! * (1 - white), LinearSRGBColorSpace)
+}
+
+function makeLabels(nodes: ClusterNode[], macro: boolean): ClusterLabel[] {
+  return nodes.map((node, k) => ({
+    node,
+    text: macro ? node.name.toUpperCase() : node.name,
+    color: inkTint(node.color.linear, macro ? 0.62 : 0.45),
+    px: macro ? sceneTheme.label.macroPx : sceneTheme.label.systemPx,
+    slot: null,
+    shown: false,
+    placed: false,
+    alpha: 0,
+    key: 0,
+    order: k,
+  }))
 }
 
 /**
@@ -50,48 +101,29 @@ function inkTint([r, g, b]: readonly number[], white: number) {
  * mid zoom, and finally a pool of repo labels ranked by brightness, size and nearness to the cursor.
  */
 export function Labels({ galaxy }: { galaxy: GalaxyIndex }) {
-  const macro = useMemo<ClusterLabel[]>(
-    () =>
-      galaxy.galaxies.map((node) => ({
-        node,
-        text: node.name.toUpperCase(),
-        color: inkTint(node.color.linear, 0.62),
-        px: sceneTheme.label.macroPx,
-        slot: null,
-        shown: false,
-        alpha: 0,
-      })),
-    [galaxy],
-  )
-  const systems = useMemo<ClusterLabel[]>(
-    () =>
-      galaxy.systems.map((node) => ({
-        node,
-        text: node.name,
-        color: inkTint(node.color.linear, 0.45),
-        px: sceneTheme.label.systemPx,
-        slot: null,
-        shown: false,
-        alpha: 0,
-      })),
-    [galaxy],
-  )
+  const macro = useMemo(() => makeLabels(galaxy.galaxies, true), [galaxy])
+  const systems = useMemo(() => makeLabels(galaxy.systems, false), [galaxy])
+  const all = useMemo(() => [...macro, ...systems], [macro, systems])
+  const byDistance = useMemo(() => [...macro], [macro])
+  const bySize = useRef<ClusterLabel[]>([])
   const groups = useRef<Map<ClusterLabel, Group>>(new Map())
   const texts = useRef<Map<ClusterLabel, TextLike>>(new Map())
-  const repo = useRef({
+  const occ = useRef(new Occupancy(1, 1))
+  const forced = useRef<number[]>([])
+  const repo = useRef<RepoState>({
     lastPick: 0,
-    candidates: [] as number[],
-    slotOf: new Map<number, number>(),
-    starOf: [] as (number | null)[],
-    alpha: [] as number[],
-    placed: new Map<number, number>(),
-    width: new Map<number, number>(),
-    /** The DOM pool these assignments belong to; a remounted pool starts empty. */
-    pool: null as HTMLElement[] | null,
-    recheck: 0 as ReturnType<typeof setTimeout> | 0,
+    candidates: [],
+    slotOf: new Map(),
+    starOf: [],
+    alpha: [],
+    placed: new Map(),
+    next: new Map(),
+    width: new Map(),
+    pool: null,
+    recheck: 0,
   })
   useEffect(() => () => clearTimeout(repo.current.recheck), [])
-  const occluderCache = useRef({ at: -Infinity, rects: [] as { x0: number; y0: number; x1: number; y1: number }[] })
+  const occluderCache = useRef({ at: -Infinity, rects: [] as Rect[], count: 0 })
 
   useFrame(({ camera, size }, dt) => {
     const cam = camera as PerspectiveCamera
@@ -101,7 +133,12 @@ export function Labels({ galaxy }: { galaxy: GalaxyIndex }) {
     if (!g || g !== galaxy || !m) return
     const layout = currentLayout()
     const flat = layout.flat
-    const occ = new Occupancy(size.width, size.height)
+    const o = occ.current
+    o.reset(size.width, size.height)
+    const u = sceneBus.uniforms
+    sizes.sizeScale = u.uSizeScale.value
+    sizes.minPx = u.uMinPx.value
+    sizes.maxPx = u.uMaxPx.value
     const k = s.frozen ? 1 : 1 - Math.exp(-FADE_RATE * Math.min(dt, 0.1))
     let moving = false
     const fade = (cur: number, target: number) => {
@@ -115,83 +152,109 @@ export function Labels({ galaxy }: { galaxy: GalaxyIndex }) {
     const oc = occluderCache.current
     if (performance.now() - oc.at > REPO.reselectMs) {
       oc.at = performance.now()
-      oc.rects = []
+      oc.count = 0
       for (const read of sceneBus.occluders) {
         const r = read()
-        if (r && r.width > 0) oc.rects.push({ x0: r.left, y0: r.top, x1: r.right, y1: r.bottom })
+        if (!r || r.width <= 0) continue
+        const slot = (oc.rects[oc.count++] ??= { x0: 0, y0: 0, x1: 0, y1: 0 })
+        slot.x0 = r.left
+        slot.y0 = r.top
+        slot.x1 = r.right
+        slot.y1 = r.bottom
       }
     }
-    for (const r of oc.rects) occ.add(r)
+    for (let q = 0; q < oc.count; q++) o.add(oc.rects[q]!)
     const screenOf = (i: number) => {
       const [x, y, z] = positionAt(g.attrs, i, layout, scratch)
-      return projectPoint(m, x, y, z)
+      return projectPoint(m, x, y, z, screen)
     }
     for (const i of [s.selected, s.hovered]) {
       if (i === null) continue
       const p = screenOf(i)
-      if (p) occ.add({ x0: p.x - RETICLE, y0: p.y - RETICLE, x1: p.x + RETICLE, y1: p.y + RETICLE })
+      if (!p) continue
+      rect.x0 = p.x - RETICLE
+      rect.y0 = p.y - RETICLE
+      rect.x1 = p.x + RETICLE
+      rect.y1 = p.y + RETICLE
+      o.add(rect)
     }
 
     const labelsOn = s.settings.labels !== 'none'
     const repoState = repo.current
-    const forced: number[] = []
-    if (labelsOn && s.selected !== null) for (const [j] of g.repos[s.selected]!.neighbors) forced.push(j)
-    const repoPlaced = new Map<number, number>()
+    const forcedList = forced.current
+    forcedList.length = 0
+    if (labelsOn && s.selected !== null) for (const [j] of g.repos[s.selected]!.neighbors) forcedList.push(j)
+    const repoPlaced = repoState.next
+    repoPlaced.clear()
     const placeRepo = (i: number) => {
       if (s.filtered && !s.filtered.visible[i]) return
       const p = screenOf(i)
       if (!p) return
       const w = repoState.width.get(i) ?? estimateWidth(g.repos[i]!.fullName)
-      const r = starPixelRadius(g.attrs.size[i]!, sceneBus.dyn[i * 4 + 1] ?? 0, 1, 1, p.viewDist, m.proj[5]!, size.height, uniformsSizes())
-      const box: LabelBox = { x: p.x, y: p.y, w, h: 16, slots: starSlots(w, 16, Math.min(r, 18)), prev: repoState.placed.get(i) ?? null, pad: 2 }
-      const slot = place(occ, box, 4)
+      const r = starPixelRadius(g.attrs.size[i]!, sceneBus.dyn[i * 4 + 1] ?? 0, 1, 1, p.viewDist, m.proj[5]!, size.height, sizes)
+      box.x = p.x
+      box.y = p.y
+      box.w = w
+      box.h = 16
+      box.slots = starSlots(w, 16, Math.min(r, 18), repoSlots)
+      box.prev = repoState.placed.get(i) ?? null
+      box.pad = 2
+      const slot = place(o, box, 4)
       if (slot !== null) repoPlaced.set(i, slot)
     }
-    forced.forEach(placeRepo)
+    for (const i of forcedList) placeRepo(i)
 
     // Cluster names step back under the lens so the heat map carries the view.
     const lensDim = s.lens.state === 'ready' ? 0.5 : 1
+    const reveal = (order: number) => (sceneBus.labelClock === Infinity ? 1 : labelReveal(sceneBus.labelClock, order))
 
     // Galaxy labels, nearest first. They fade once the camera is inside the galaxy.
-    const order = macro
-      .map((l) => ({ l, d: cam.position.distanceTo(clusterAnchor(l.node, flat, anchor)) }))
-      .sort((a, b) => a.d - b.d)
-    for (const { l, d } of order) {
-      const inside = Math.min(1, Math.max(0, (d / Math.max(1, l.node.radius) - 1.1) / 1.4))
-      const shown = inside > 0.05 && placeCluster(l, texts.current.get(l), occ, m, flat)
+    for (const l of byDistance) l.key = cam.position.distanceTo(clusterAnchor(l.node, flat, anchor))
+    byDistance.sort(byKeyAsc)
+    for (const l of byDistance) {
+      const inside = Math.min(1, Math.max(0, (l.key / Math.max(1, l.node.radius) - 1.1) / 1.4))
+      const shown = inside > 0.05 && placeCluster(l, texts.current.get(l), o, m, flat)
       const emphasis = (s.hoveredCluster === null ? 0.86 : s.hoveredCluster === l.node.id ? 1 : 0.4) * lensDim
-      l.alpha = fade(l.alpha, shown ? inside * emphasis : 0)
+      l.alpha = fade(l.alpha, shown ? inside * emphasis * reveal(l.order) : 0)
     }
 
     // System labels once a system spans enough of the screen, largest first, at most 25.
     const focusGalaxy = s.focusCluster ? (g.clusterById.get(s.focusCluster)?.level === 0 ? s.focusCluster : g.clusterById.get(s.focusCluster)?.parentId) : null
-    const sized: { l: ClusterLabel; px: number }[] = []
+    const sized = bySize.current
+    sized.length = 0
     for (const l of systems) {
-      const px = labelsOn ? projectedRadius(l.node, flat, m, cam) : 0
-      l.shown = hysteresis(l.shown, px, SYSTEM.onPx, SYSTEM.offPx)
-      if (l.shown) sized.push({ l, px })
+      l.key = labelsOn ? projectedRadius(l.node, flat, m, cam) : 0
+      l.shown = hysteresis(l.shown, l.key, SYSTEM.onPx, SYSTEM.offPx)
+      l.placed = false
+      if (l.shown) sized.push(l)
     }
-    sized.sort((a, b) => b.px - a.px)
-    const sysShown = new Set<ClusterLabel>()
-    for (const { l } of sized) {
-      if (sysShown.size >= SYSTEM.maxShown) break
-      if (placeCluster(l, texts.current.get(l), occ, m, flat)) sysShown.add(l)
+    sized.sort(byKeyDesc)
+    let sysCount = 0
+    for (const l of sized) {
+      if (sysCount >= SYSTEM.maxShown) break
+      if (placeCluster(l, texts.current.get(l), o, m, flat)) {
+        l.placed = true
+        sysCount++
+      }
     }
+    const systemReveal = reveal(macro.length)
     for (const l of systems) {
       const dim = focusGalaxy && l.node.parentId !== focusGalaxy ? 0.35 : 1
       const hot = s.hoveredCluster === l.node.id || s.focusCluster === l.node.id ? 1 : 0.8
-      l.alpha = fade(l.alpha, sysShown.has(l) ? dim * hot * lensDim : 0)
-      if (!sysShown.has(l)) l.slot = null
+      l.alpha = fade(l.alpha, l.placed ? dim * hot * lensDim * systemReveal : 0)
+      if (!l.placed) l.slot = null
     }
 
     // Repo labels: re-rank at 10 Hz, place every frame so they track their stars. Sparse at the
-    // overview (home sits about 1.66 radii out), the full pool once zoomed in twofold.
-    const zoom = Math.min(1, Math.max(0.25, 0.3 * ((1.66 * g.radius) / Math.max(1, sceneBus.controls?.distance ?? 1)) ** 1.5))
-    const want = !labelsOn ? 0 : Math.round((s.settings.labels === 'more' ? REPO.moreCount : REPO.autoCount) * zoom)
+    // overview, the full pool once zoomed in twofold from home.
+    const home = sceneBus.homeDistance || 1.66 * g.radius
+    const zoom = Math.min(1, Math.max(0.25, 0.3 * (home / Math.max(1, sceneBus.controls?.distance ?? 1)) ** 1.5))
+    const want = !labelsOn || systemReveal < 1 ? 0 : Math.round((s.settings.labels === 'more' ? REPO.moreCount : REPO.autoCount) * zoom)
     const now = performance.now()
     if (now - repoState.lastPick > REPO.reselectMs) {
       repoState.lastPick = now
-      repoState.candidates = want > 0 ? rankRepos(g, m, size, layout, forced, s.lens.state === 'ready' ? s.lens.weights : null) : []
+      if (want > 0) rankRepos(g, m, size, layout, forcedList, s.lens.state === 'ready' ? s.lens.weights : null, repoState.candidates)
+      else repoState.candidates.length = 0
     } else if (!repoState.recheck) {
       // Under frameloop 'demand' the frame after the camera rests may be the last one; schedule
       // another so the ranking catches up with where it stopped.
@@ -201,9 +264,10 @@ export function Labels({ galaxy }: { galaxy: GalaxyIndex }) {
       }, REPO.reselectMs)
     }
     for (const i of repoState.candidates) {
-      if (repoPlaced.size >= want + forced.length) break
+      if (repoPlaced.size >= want + forcedList.length) break
       if (!repoPlaced.has(i) && i !== s.hovered) placeRepo(i)
     }
+    repoState.next = repoState.placed
     repoState.placed = repoPlaced
     writeRepoSlots(g, repoState, repoPlaced, screenOf, fade)
 
@@ -211,7 +275,7 @@ export function Labels({ galaxy }: { galaxy: GalaxyIndex }) {
     const worldPerPx = (2 * Math.tan((cam.fov * Math.PI) / 360)) / size.height
     up.set(0, 1, 0).applyQuaternion(cam.quaternion)
     right.set(1, 0, 0).applyQuaternion(cam.quaternion)
-    for (const l of [...macro, ...systems]) {
+    for (const l of all) {
       const group = groups.current.get(l)
       const text = texts.current.get(l)
       if (!group || !text) continue
@@ -223,7 +287,7 @@ export function Labels({ galaxy }: { galaxy: GalaxyIndex }) {
       const depth = Math.max(1, -viewPos.copy(anchor).applyMatrix4(cam.matrixWorldInverse).z)
       const unit = depth * worldPerPx
       const { w, h } = measure(l, text)
-      const [dx, dy] = clusterSlots(w, h)[l.slot]!
+      const [dx, dy] = clusterSlots(w, h, labelSlots)[l.slot]!
       // Slot offsets are top-left in screen pixels; the text is anchored at its centre.
       const cx = dx + w / 2
       const cy = dy + h / 2
@@ -276,53 +340,57 @@ function clusterAnchor(c: ClusterNode, flat: number, out: Vector3) {
 function measure(l: ClusterLabel, text: TextLike | undefined) {
   const b = text?.textRenderInfo?.blockBounds
   const w = b ? (b[2] - b[0]) * l.px : l.text.length * l.px * (l.node.level === 0 ? 0.86 : 0.56)
-  return { w: w + 12, h: l.px * 1.35 }
+  dims.w = w + 12
+  dims.h = l.px * 1.35
+  return dims
 }
 
-function placeCluster(l: ClusterLabel, text: TextLike | undefined, occ: Occupancy, m: NonNullable<ReturnType<typeof currentProjector>>, flat: number): boolean {
+function placeCluster(l: ClusterLabel, text: TextLike | undefined, occ: Occupancy, m: Projector, flat: number): boolean {
   clusterAnchor(l.node, flat, anchor)
-  const p = projectPoint(m, anchor.x, anchor.y, anchor.z)
+  const p = projectPoint(m, anchor.x, anchor.y, anchor.z, screen)
   if (!p) {
     l.slot = null
     return false
   }
   const { w, h } = measure(l, text)
-  const slot = place(occ, { x: p.x, y: p.y, w, h, slots: clusterSlots(w, h), prev: l.slot })
+  box.x = p.x
+  box.y = p.y
+  box.w = w
+  box.h = h
+  box.slots = clusterSlots(w, h, labelSlots)
+  box.prev = l.slot
+  box.pad = 0
+  const slot = place(occ, box)
   l.slot = slot
   return slot !== null
 }
 
-function projectedRadius(c: ClusterNode, flat: number, m: NonNullable<ReturnType<typeof currentProjector>>, cam: PerspectiveCamera) {
+function projectedRadius(c: ClusterNode, flat: number, m: Projector, cam: PerspectiveCamera) {
   clusterAnchor(c, flat, anchor)
-  const p = projectPoint(m, anchor.x, anchor.y, anchor.z)
+  const p = projectPoint(m, anchor.x, anchor.y, anchor.z, screen)
   if (!p) return 0
-  const focal = (m.height / 2) / Math.tan((cam.fov * Math.PI) / 360)
+  const focal = m.height / 2 / Math.tan((cam.fov * Math.PI) / 360)
   return (c.radius * focal) / Math.max(1, p.viewDist)
-}
-
-function uniformsSizes() {
-  const u = sceneBus.uniforms
-  return { sizeScale: u.uSizeScale.value, minPx: u.uMinPx.value, maxPx: u.uMaxPx.value }
 }
 
 const estimateWidth = (fullName: string) => fullName.length * 6.65 + 2
 
+/** Writes the best-scoring repo label candidates into `out`, best first. */
 function rankRepos(
   g: GalaxyIndex,
-  m: NonNullable<ReturnType<typeof currentProjector>>,
+  m: Projector,
   size: { width: number; height: number },
   layout: ReturnType<typeof currentLayout>,
   skip: number[],
   lens: Float32Array | null,
-): number[] {
+  out: number[],
+) {
   const focus = sceneBus.pointer ?? { x: size.width / 2, y: size.height / 2 }
-  const skipSet = new Set(skip)
-  const sizes = uniformsSizes()
-  const best: [number, number][] = []
+  let count = 0
   for (let i = 0; i < g.n; i++) {
-    if (skipSet.has(i) || (sceneBus.dyn[i * 4] ?? 1) < 0.5) continue
+    if ((sceneBus.dyn[i * 4] ?? 1) < 0.5 || skip.includes(i)) continue
     const [x, y, z] = positionAt(g.attrs, i, layout, scratch)
-    const p = projectPoint(m, x, y, z)
+    const p = projectPoint(m, x, y, z, screen)
     if (!p || p.x < 0 || p.y < 0 || p.x > size.width || p.y > size.height) continue
     const r = starPixelRadius(g.attrs.size[i]!, 0, 1, 1, p.viewDist, m.proj[5]!, size.height, sizes)
     if (r < REPO.minPx) continue
@@ -330,17 +398,26 @@ function rankRepos(
     const lit = (sceneBus.dyn[i * 4 + 2] ?? 1) * 0.75 + 0.25
     const heat = lens ? 0.05 + lens[i]! : 1
     const score = (g.attrs.bright[i]! * (0.35 + g.attrs.size[i]!) * r * lit * heat) / (1 + d / 220)
-    best.push([i, score])
+    if (count === TOP && score <= topScore[TOP - 1]!) continue
+    // Insertion into a fixed top-K list, kept sorted best first.
+    let at = count < TOP ? count++ : TOP - 1
+    while (at > 0 && topScore[at - 1]! < score) {
+      topScore[at] = topScore[at - 1]!
+      topIdx[at] = topIdx[at - 1]!
+      at--
+    }
+    topScore[at] = score
+    topIdx[at] = i
   }
-  best.sort((a, b) => b[1] - a[1])
-  return best.slice(0, REPO.candidates).map(([i]) => i)
+  out.length = count
+  for (let q = 0; q < count; q++) out[q] = topIdx[q]!
 }
 
 function writeRepoSlots(
   g: GalaxyIndex,
-  st: { slotOf: Map<number, number>; starOf: (number | null)[]; alpha: number[]; width: Map<number, number>; pool: HTMLElement[] | null },
+  st: RepoState,
   placed: Map<number, number>,
-  screenOf: (i: number) => ReturnType<typeof projectPoint>,
+  screenOf: (i: number) => ScreenPoint | null,
   fade: (cur: number, target: number) => number,
 ) {
   const slots = sceneBus.repoLabelSlots
@@ -360,7 +437,13 @@ function writeRepoSlots(
   }
   for (const star of placed.keys()) {
     if (st.slotOf.has(star)) continue
-    const free = slots.findIndex((_, k) => (st.starOf[k] ?? null) === null)
+    let free = -1
+    for (let k = 0; k < slots.length; k++) {
+      if ((st.starOf[k] ?? null) === null) {
+        free = k
+        break
+      }
+    }
     if (free < 0) break
     st.slotOf.set(star, free)
     st.starOf[free] = star
@@ -372,18 +455,23 @@ function writeRepoSlots(
     el.children[1]!.textContent = name.slice(at + 1)
     st.width.set(star, el.offsetWidth || estimateWidth(name))
   }
-  slots.forEach((el, k) => {
+  const projYY = sceneBus.camera!.projectionMatrix.elements[5]!
+  for (let k = 0; k < slots.length; k++) {
+    const el = slots[k]!
     const star = st.starOf[k] ?? null
     const target = star !== null && placed.has(star) ? 1 : 0
-    st.alpha[k] = fade(st.alpha[k] ?? 0, target)
-    el.style.opacity = String(st.alpha[k])
-    if (star === null) return
-    const p = screenOf(star)
+    const prev = st.alpha[k] ?? 0
+    const alpha = fade(prev, target)
+    st.alpha[k] = alpha
+    if (alpha !== prev || el.style.opacity === '') el.style.opacity = String(alpha)
+    if (star === null) continue
     const slot = placed.get(star)
-    if (!p || slot === undefined) return
+    if (slot === undefined) continue
+    const p = screenOf(star)
+    if (!p) continue
     const w = st.width.get(star) ?? estimateWidth(g.repos[star]!.fullName)
-    const r = Math.min(18, starPixelRadius(g.attrs.size[star]!, sceneBus.dyn[star * 4 + 1] ?? 0, 1, 1, p.viewDist, sceneBus.camera!.projectionMatrix.elements[5]!, sceneBus.size.height, uniformsSizes()))
-    const [dx, dy] = starSlots(w, 16, r)[slot]!
+    const r = Math.min(18, starPixelRadius(g.attrs.size[star]!, sceneBus.dyn[star * 4 + 1] ?? 0, 1, 1, p.viewDist, projYY, sceneBus.size.height, sizes))
+    const [dx, dy] = starSlots(w, 16, r, repoSlots)[slot]!
     el.style.transform = `translate3d(${Math.round(p.x + dx)}px, ${Math.round(p.y + dy)}px, 0)`
-  })
+  }
 }

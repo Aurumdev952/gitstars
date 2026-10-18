@@ -2,34 +2,60 @@ export type Rect = { x0: number; y0: number; x1: number; y1: number }
 
 const CELL = 64
 
-/** Screen-space occupancy: a bucket grid of placed rects, so each collision test stays local. */
+/**
+ * Screen-space occupancy: a bucket grid of placed rects, so each collision test stays local. It is
+ * rebuilt every frame, so `reset` keeps the buckets and rect objects for reuse instead of
+ * reallocating them.
+ */
 export class Occupancy {
   private cells = new Map<number, Rect[]>()
+  private pool: Rect[] = []
   count = 0
 
-  constructor(readonly width: number, readonly height: number) {}
+  constructor(
+    public width: number,
+    public height: number,
+  ) {}
 
-  private *keys(r: Rect) {
+  reset(width: number, height: number) {
+    this.width = width
+    this.height = height
+    this.count = 0
+    for (const bucket of this.cells.values()) bucket.length = 0
+  }
+
+  /** Claims a copy of `r`; the caller may reuse `r` afterwards. */
+  add(r: Rect) {
+    const own = (this.pool[this.count] ??= { x0: 0, y0: 0, x1: 0, y1: 0 })
+    own.x0 = r.x0
+    own.y0 = r.y0
+    own.x1 = r.x1
+    own.y1 = r.y1
+    this.count++
     const cx0 = Math.floor(Math.max(0, r.x0) / CELL)
     const cy0 = Math.floor(Math.max(0, r.y0) / CELL)
     const cx1 = Math.floor(Math.min(this.width, r.x1) / CELL)
     const cy1 = Math.floor(Math.min(this.height, r.y1) / CELL)
-    for (let cx = cx0; cx <= cx1; cx++) for (let cy = cy0; cy <= cy1; cy++) yield cx * 4096 + cy
-  }
-
-  add(r: Rect) {
-    this.count++
-    for (const k of this.keys(r)) {
-      const bucket = this.cells.get(k)
-      if (bucket) bucket.push(r)
-      else this.cells.set(k, [r])
-    }
+    for (let cx = cx0; cx <= cx1; cx++)
+      for (let cy = cy0; cy <= cy1; cy++) {
+        const k = cx * 4096 + cy
+        const bucket = this.cells.get(k)
+        if (bucket) bucket.push(own)
+        else this.cells.set(k, [own])
+      }
   }
 
   hits(r: Rect): boolean {
-    for (const k of this.keys(r)) {
-      for (const o of this.cells.get(k) ?? []) if (r.x0 < o.x1 && o.x0 < r.x1 && r.y0 < o.y1 && o.y0 < r.y1) return true
-    }
+    const cx0 = Math.floor(Math.max(0, r.x0) / CELL)
+    const cy0 = Math.floor(Math.max(0, r.y0) / CELL)
+    const cx1 = Math.floor(Math.min(this.width, r.x1) / CELL)
+    const cy1 = Math.floor(Math.min(this.height, r.y1) / CELL)
+    for (let cx = cx0; cx <= cx1; cx++)
+      for (let cy = cy0; cy <= cy1; cy++) {
+        const bucket = this.cells.get(cx * 4096 + cy)
+        if (!bucket) continue
+        for (const o of bucket) if (r.x0 < o.x1 && o.x0 < r.x1 && r.y0 < o.y1 && o.y0 < r.y1) return true
+      }
     return false
   }
 
@@ -37,6 +63,8 @@ export class Occupancy {
     return r.x0 >= margin && r.y0 >= margin && r.x1 <= this.width - margin && r.y1 <= this.height - margin
   }
 }
+
+export type Slot = [number, number]
 
 export type LabelBox = {
   /** Anchor in screen pixels. */
@@ -52,12 +80,25 @@ export type LabelBox = {
   pad?: number
 }
 
-export function rectAt(b: LabelBox, slot: number): Rect {
+export function rectAt(b: LabelBox, slot: number, out: Rect = { x0: 0, y0: 0, x1: 0, y1: 0 }): Rect {
   const [dx, dy] = b.slots[slot]!
   const pad = b.pad ?? 0
   const x0 = b.x + dx
   const y0 = b.y + dy
-  return { x0: x0 - pad, y0: y0 - pad, x1: x0 + b.w + pad, y1: y0 + b.h + pad }
+  out.x0 = x0 - pad
+  out.y0 = y0 - pad
+  out.x1 = x0 + b.w + pad
+  out.y1 = y0 + b.h + pad
+  return out
+}
+
+const probe: Rect = { x0: 0, y0: 0, x1: 0, y1: 0 }
+
+function tryPlace(occ: Occupancy, b: LabelBox, s: number, margin: number) {
+  rectAt(b, s, probe)
+  if (!occ.inside(probe, margin) || occ.hits(probe)) return false
+  occ.add(probe)
+  return true
 }
 
 /**
@@ -65,37 +106,38 @@ export function rectAt(b: LabelBox, slot: number): Rect {
  * null when every slot collides or leaves the viewport.
  */
 export function place(occ: Occupancy, b: LabelBox, margin = 6): number | null {
-  const order = b.prev !== null && b.prev < b.slots.length ? [b.prev, ...b.slots.keys()] : b.slots.keys()
-  for (const s of order) {
-    const r = rectAt(b, s)
-    if (!occ.inside(r, margin) || occ.hits(r)) continue
-    occ.add(r)
-    return s
-  }
+  const prev = b.prev !== null && b.prev < b.slots.length ? b.prev : -1
+  if (prev >= 0 && tryPlace(occ, b, prev, margin)) return prev
+  for (let s = 0; s < b.slots.length; s++) if (s !== prev && tryPlace(occ, b, s, margin)) return s
   return null
 }
 
+const slotArray = (n: number): Slot[] => Array.from({ length: n }, (): Slot => [0, 0])
+
+function setSlot(out: Slot[], k: number, x: number, y: number) {
+  out[k]![0] = x
+  out[k]![1] = y
+}
+
 /** Centred above, then below, right, left, and further out: for labels on a cluster centre. */
-export function clusterSlots(w: number, h: number): [number, number][] {
-  return [
-    [-w / 2, -h],
-    [-w / 2, 4],
-    [10, -h / 2],
-    [-w - 10, -h / 2],
-    [-w / 2, -2.2 * h],
-    [-w / 2, 1.3 * h],
-  ]
+export function clusterSlots(w: number, h: number, out: Slot[] = slotArray(6)): Slot[] {
+  setSlot(out, 0, -w / 2, -h)
+  setSlot(out, 1, -w / 2, 4)
+  setSlot(out, 2, 10, -h / 2)
+  setSlot(out, 3, -w - 10, -h / 2)
+  setSlot(out, 4, -w / 2, -2.2 * h)
+  setSlot(out, 5, -w / 2, 1.3 * h)
+  return out
 }
 
 /** Right of the star, then left, above and below, clear of a sprite of radius `r`. */
-export function starSlots(w: number, h: number, r: number): [number, number][] {
+export function starSlots(w: number, h: number, r: number, out: Slot[] = slotArray(4)): Slot[] {
   const gap = r + 5
-  return [
-    [gap, -h / 2],
-    [-w - gap, -h / 2],
-    [-w / 2, -h - gap],
-    [-w / 2, gap],
-  ]
+  setSlot(out, 0, gap, -h / 2)
+  setSlot(out, 1, -w - gap, -h / 2)
+  setSlot(out, 2, -w / 2, -h - gap)
+  setSlot(out, 3, -w / 2, gap)
+  return out
 }
 
 /** Shows past `on`, hides below `off` (off < on), so a label hovering at the threshold does not flicker. */

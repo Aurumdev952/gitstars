@@ -1,6 +1,8 @@
 import { Sphere, Vector3 } from 'three'
 import { useGalaxyStore } from '#/state/store'
 import { positionAt, RESTING_LAYOUT } from '#/lib/layout'
+import { fitPoints, type Framing } from '#/lib/framing'
+import type { GalaxyIndex } from '#/lib/load'
 import { currentLayout, sceneBus } from './sceneBus'
 
 // Camera choreography outside React. Every command supersedes the one before it: a running
@@ -62,18 +64,42 @@ function boundingSphere(indices: Iterable<number>, pad = 1.1, minRadius = 8, qua
   return new Sphere(center, Math.max(minRadius, r * pad))
 }
 
+// The HUD's top bar and bottom row take this much of the viewport off the cloud.
+const HOME_FILL = { x: 0.84, y: 0.74 }
+let homeCache: { g: GalaxyIndex; aspect: number; fov: number; pose: Framing } | null = null
+
+/** Where home puts the camera for the current viewport: the 3D cloud filling the free area. */
+export function homePose(): (Framing & { azimuth: number; polar: number }) | null {
+  const g = useGalaxyStore.getState().galaxy
+  const cam = sceneBus.camera
+  if (!g || !cam) return null
+  const aspect = sceneBus.size.width / Math.max(1, sceneBus.size.height)
+  if (!homeCache || homeCache.g !== g || Math.abs(homeCache.aspect - aspect) > 1e-3 || homeCache.fov !== cam.fov) {
+    const pose = fitPoints(g.attrs.pos, g.n, {
+      azimuth: HOME_AZIMUTH,
+      polar: HOME_POLAR,
+      tanHalfFov: Math.tan((cam.fov * Math.PI) / 360),
+      aspect,
+      fill: HOME_FILL,
+      quantile: 0.97,
+    })
+    homeCache = { g, aspect, fov: cam.fov, pose }
+  }
+  sceneBus.homeDistance = homeCache.pose.distance
+  return { ...homeCache.pose, azimuth: HOME_AZIMUTH, polar: HOME_POLAR }
+}
+
 export type Director = typeof director
 
 export const director = {
   async home(animate = true) {
     const c = sceneBus.controls
-    const g = useGalaxyStore.getState().galaxy
-    if (!c || !g) return
+    const pose = homePose()
+    if (!c || !pose) return
     const { alive, end } = begin()
-    const sphere = boundingSphere(g.repos.keys(), 1, 20, 0.99)
-    if (!sphere) return end()
     const a = animated(animate)
-    await Promise.all([c.rotateTo(nearestAngle(c.azimuthAngle, HOME_AZIMUTH), HOME_POLAR, a), c.fitToSphere(sphere, a)])
+    const [x, y, z] = pose.target
+    await Promise.all([c.setTarget(x, y, z, a), c.rotateTo(nearestAngle(c.azimuthAngle, pose.azimuth), pose.polar, a), c.dollyTo(pose.distance, a)])
     if (alive()) end()
   },
 

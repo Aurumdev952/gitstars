@@ -14,7 +14,7 @@ export type ScreenPoint = { x: number; y: number; viewDist: number }
 const scratch: [number, number, number] = [0, 0, 0]
 
 /** CSS-pixel position of a world point, or null when it is behind the camera. */
-export function projectPoint(m: Projector, x: number, y: number, z: number): ScreenPoint | null {
+export function projectPoint(m: Projector, x: number, y: number, z: number, out?: ScreenPoint): ScreenPoint | null {
   const v = m.view
   const vx = v[0]! * x + v[4]! * y + v[8]! * z + v[12]!
   const vy = v[1]! * x + v[5]! * y + v[9]! * z + v[13]!
@@ -24,7 +24,13 @@ export function projectPoint(m: Projector, x: number, y: number, z: number): Scr
   const cx = p[0]! * vx + p[4]! * vy + p[8]! * vz + p[12]!
   const cy = p[1]! * vx + p[5]! * vy + p[9]! * vz + p[13]!
   const cw = p[3]! * vx + p[7]! * vy + p[11]! * vz + p[15]!
-  return { x: (cx / cw * 0.5 + 0.5) * m.width, y: (0.5 - cy / cw * 0.5) * m.height, viewDist: -vz }
+  const sx = (cx / cw * 0.5 + 0.5) * m.width
+  const sy = (0.5 - cy / cw * 0.5) * m.height
+  if (!out) return { x: sx, y: sy, viewDist: -vz }
+  out.x = sx
+  out.y = sy
+  out.viewDist = -vz
+  return out
 }
 
 export type PickInput = {
