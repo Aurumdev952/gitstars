@@ -143,8 +143,7 @@ class DB:
     def put_artifact(self, stage: str, key: CacheKey, payload: Any) -> None:
         with self.conn:
             self.conn.execute(
-                "INSERT OR REPLACE INTO artifacts (stage, full_name, head_oid, version, payload, updated_at)"
-                " VALUES (?, ?, ?, ?, ?, ?)",
+                "INSERT OR REPLACE INTO artifacts (stage, full_name, head_oid, version, payload, updated_at) VALUES (?, ?, ?, ?, ?, ?)",
                 (stage, key.full_name, key.head_oid, key.stage_version, json.dumps(payload), time.time()),
             )
 

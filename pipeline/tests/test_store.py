@@ -14,8 +14,18 @@ from gitstars.summarize import SUMMARY_VERSION
 
 
 def repo(name: str, oid: str = "a1", stars: int = 10, starred: str = "2024-01-01T00:00:00Z") -> Repo:
-    return Repo(full_name=name, owner=name.split("/")[0], head_oid=oid, url=f"https://github.com/{name}", starred_at=starred,
-                stars=stars, description=f"{name} desc", topics=["cli"], language="Rust", languages=["Rust"])
+    return Repo(
+        full_name=name,
+        owner=name.split("/")[0],
+        head_oid=oid,
+        url=f"https://github.com/{name}",
+        starred_at=starred,
+        stars=stars,
+        description=f"{name} desc",
+        topics=["cli"],
+        language="Rust",
+        languages=["Rust"],
+    )
 
 
 @pytest.fixture
@@ -51,8 +61,10 @@ def test_upsert_marks_unstarred_inactive(db):
 
 
 def test_parse_summary_tolerates_fences_and_normalizes():
-    raw = 'Sure!\n```json\n{"one_liner":"A fast find","summary":"fd is a fast alternative to find.","kind":"cli",' \
-          '"domain":null,"tags":["CLI","Rust","cli","file search"],"stack":["Rust"],"audience":null,"highlights":[]}\n```'
+    raw = (
+        'Sure!\n```json\n{"one_liner":"A fast find","summary":"fd is a fast alternative to find.","kind":"cli",'
+        '"domain":null,"tags":["CLI","Rust","cli","file search"],"stack":["Rust"],"audience":null,"highlights":[]}\n```'
+    )
     s = parse_summary(raw)
     assert s.tags == ["cli", "rust", "file-search"]
     with pytest.raises(json.JSONDecodeError):
@@ -70,21 +82,32 @@ def _seed_export(db: DB, n: int = 3) -> None:
     vecs /= np.linalg.norm(vecs, axis=1, keepdims=True)
     db.put_embeddings("cluster", 1, [(nm, "a1", f"t{i}", vecs[i]) for i, nm in enumerate(names)])
     db.put_embeddings("search", 1, [(nm, "a1", f"t{i}", vecs[i]) for i, nm in enumerate(names)])
-    summary = Summary(one_liner="Does r1 things", summary="r1 does specific things well.", kind="library", domain="x",
-                      tags=["a", "b"], stack=["Rust"], audience=None, highlights=[])
+    summary = Summary(
+        one_liner="Does r1 things",
+        summary="r1 does specific things well.",
+        kind="library",
+        domain="x",
+        tags=["a", "b"],
+        stack=["Rust"],
+        audience=None,
+        highlights=[],
+    )
     db.put_artifact("summary", cache_key(repos[1], SUMMARY_VERSION), {"summary": summary.model_dump(), "quality": 0.75})
     db.put_global("probe_vectors", {"queries": ["q"], "vectors": vecs[:1, :256].tolist()})
-    db.put_global("layout", {
-        "names": names,
-        "input_sha": sha([f"t{i}" for i in range(n)]),
-        "galaxy": ["g00"] * n,
-        "system": ["g00.s00", "g00.s00", "g00.s01"],
-        "outlier": [False, False, True],
-        "pos": [[0, 0, 0], [1, 2, 3], [-100, 100, 50]],
-        "pos2": [[0, 0], [1, 2], [-100, 100]],
-        "neighbors": [[[1, 0.5], [2, 0.1]], [[0, 0.5]], [[0, 0.1]]],
-        "ctfidf": {c: {"name": c, "blurb": "", "keywords": ["k"]} for c in ("g00", "g00.s00", "g00.s01")},
-    })
+    db.put_global(
+        "layout",
+        {
+            "names": names,
+            "input_sha": sha([f"t{i}" for i in range(n)]),
+            "galaxy": ["g00"] * n,
+            "system": ["g00.s00", "g00.s00", "g00.s01"],
+            "outlier": [False, False, True],
+            "pos": [[0, 0, 0], [1, 2, 3], [-100, 100, 50]],
+            "pos2": [[0, 0], [1, 2], [-100, 100]],
+            "neighbors": [[[1, 0.5], [2, 0.1]], [[0, 0.5]], [[0, 0.1]]],
+            "ctfidf": {c: {"name": c, "blurb": "", "keywords": ["k"]} for c in ("g00", "g00.s00", "g00.s01")},
+        },
+    )
 
 
 def test_tiny_export_validates_against_contract(db):

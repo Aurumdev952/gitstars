@@ -137,9 +137,7 @@ def probes(db: DB, vectors: np.ndarray) -> list[dict[str, Any]]:
     q = np.asarray(stored["vectors"], dtype=np.float32)
     # Score against the exported f16 values, which is what the browser will search.
     sims = q @ vectors.astype(np.float16).astype(np.float32).T
-    return [
-        {"query": query, "topIdx": [int(j) for j in np.argsort(-row)[:PROBE_TOP]]} for query, row in zip(stored["queries"], sims)
-    ]
+    return [{"query": query, "topIdx": [int(j) for j in np.argsort(-row)[:PROBE_TOP]]} for query, row in zip(stored["queries"], sims)]
 
 
 def build(db: DB, viewer: str) -> tuple[dict[str, Any], np.ndarray]:

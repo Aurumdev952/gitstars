@@ -36,8 +36,15 @@ def test_attach_noise_to_nearest_centroid():
 
 
 def test_assign_ids_orders_by_size():
-    lay = Layout(names=list("abcdefg"), system=np.array([5, 5, 5, 5, 7, 9, 9]), galaxy_of_system={5: 1, 7: 0, 9: 0},
-                 outlier=np.zeros(7, bool), pos=np.zeros((7, 3)), pos2=np.zeros((7, 2)), neighbors=[])
+    lay = Layout(
+        names=list("abcdefg"),
+        system=np.array([5, 5, 5, 5, 7, 9, 9]),
+        galaxy_of_system={5: 1, 7: 0, 9: 0},
+        outlier=np.zeros(7, bool),
+        pos=np.zeros((7, 3)),
+        pos2=np.zeros((7, 2)),
+        neighbors=[],
+    )
     galaxies, systems = assign_ids(lay)
     assert systems == ["g00.s00"] * 4 + ["g01.s01", "g01.s00", "g01.s00"]
     assert galaxies == ["g00"] * 4 + ["g01"] * 3

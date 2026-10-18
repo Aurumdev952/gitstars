@@ -32,7 +32,4 @@ def user_prompt(card_text: str, feedback: str | None = None) -> str:
 
 
 def repair_prompt(error: str) -> str:
-    return (
-        f"Your reply was not a valid JSON object for the schema ({error[:300]}). "
-        "Reply again with only the corrected JSON object."
-    )
+    return f"Your reply was not a valid JSON object for the schema ({error[:300]}). Reply again with only the corrected JSON object."

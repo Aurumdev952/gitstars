@@ -137,8 +137,14 @@ def show(repo: str) -> None:
     r = ctx.db.repo(repo)
     if r is None:
         raise typer.BadParameter(f"{repo} is not an active star")
-    console.print(Panel.fit(Text(f"{r.full_name}  ★{r.stars}  {r.language or ''}  starred {r.starred_at[:10]}\n"
-                                 f"{r.description or '(no description)'}\nhomepage: {r.homepage or '-'}  head {r.head_oid[:10]}")))
+    console.print(
+        Panel.fit(
+            Text(
+                f"{r.full_name}  ★{r.stars}  {r.language or ''}  starred {r.starred_at[:10]}\n"
+                f"{r.description or '(no description)'}\nhomepage: {r.homepage or '-'}  head {r.head_oid[:10]}"
+            )
+        )
+    )
     loaded = load_card(ctx.db, r)
     if loaded is None:
         console.print("[yellow]no card; run `gs card`[/]")
@@ -151,13 +157,21 @@ def show(repo: str) -> None:
         p = gate.keep.get(cid) if gate else None
         cands.add_row(cid.value, escape(c.source[:60]), str(len(c.text)), "-" if p is None else f"{p:.2f}")
     console.print(cands)
-    console.print(Text(f"gate: {('readme_quality=' + gate.readme_quality.value + ' model=' + gate.model) if gate else 'none (heuristic budget)'}"))
+    console.print(
+        Text(f"gate: {('readme_quality=' + gate.readme_quality.value + ' model=' + gate.model) if gate else 'none (heuristic budget)'}")
+    )
     console.print(Panel(Text(text), title=f"card sent to summarizer · {count_tokens(text)} tokens", title_align="left"))
     s = ctx.db.get_artifact("summary", cache_key(r, SUMMARY_VERSION))
     if not s:
         console.print("[yellow]not summarized[/]")
         return
-    console.print(Panel(Text(json.dumps(s["summary"], indent=2, ensure_ascii=False)), title=escape(f"summary · {s['model']} ({s['provider']})"), title_align="left"))
+    console.print(
+        Panel(
+            Text(json.dumps(s["summary"], indent=2, ensure_ascii=False)),
+            title=escape(f"summary · {s['model']} ({s['provider']})"),
+            title_align="left",
+        )
+    )
     v = s.get("verdict")
     if v:
         console.print(
@@ -217,9 +231,7 @@ def status() -> None:
             f"fetch: viewer {fs['viewer']} · starred {fs['total_starred']} · own dropped {fs['own_dropped']} · kept {fs['kept']}"
             f" · with README {fs['with_readme']} · with homepage {fs['with_homepage']}"
         )
-    calls = ctx.db.conn.execute(
-        "SELECT provider, SUM(outcome='ok'), COUNT(*) FROM llm_calls GROUP BY provider"
-    ).fetchall()
+    calls = ctx.db.conn.execute("SELECT provider, SUM(outcome='ok'), COUNT(*) FROM llm_calls GROUP BY provider").fetchall()
     for prov, ok, total in calls:
         console.print(f"llm calls ({prov}): {ok} ok / {total} total")
     dec = ctx.db.conn.execute(
@@ -229,6 +241,8 @@ def status() -> None:
         console.print(f"decider {purpose}: {ok}/{n} ok, ${cost or 0:.5f}")
     try:
         q = asyncio.run(read_quota(openrouter_key()))
-        console.print(f"openrouter: free {q.free_remaining}/{q.free_limit} remaining today (used {q.free_used}) · balance ${q.balance_usd:.4f}")
+        console.print(
+            f"openrouter: free {q.free_remaining}/{q.free_limit} remaining today (used {q.free_used}) · balance ${q.balance_usd:.4f}"
+        )
     except Exception as exc:  # status must still print when the key service or network is down
         console.print(f"openrouter quota: unavailable ({type(exc).__name__})")

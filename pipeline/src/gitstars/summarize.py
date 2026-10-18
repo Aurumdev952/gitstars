@@ -56,7 +56,9 @@ class RunState:
     stop: str | None = None
 
 
-async def _generate(state: RunState, ctx: Ctx, repo: Repo, card_text: str, feedback: str | None, tried: set[str]) -> tuple[Summary, str] | None:
+async def _generate(
+    state: RunState, ctx: Ctx, repo: Repo, card_text: str, feedback: str | None, tried: set[str]
+) -> tuple[Summary, str] | None:
     """One summary from the best available model; transport errors and unparseable output move to the next model."""
     messages = [{"role": "system", "content": SYSTEM}, {"role": "user", "content": user_prompt(card_text, feedback)}]
     for _ in range(MAX_MODEL_HOPS):

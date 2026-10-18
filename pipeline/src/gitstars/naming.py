@@ -26,11 +26,57 @@ from gitstars.llm.schema import OutputSchema
 NAME_VERSION = 1
 NEAREST_ONE_LINERS = 15
 STOP = ENGLISH_STOP_WORDS | {
-    "github", "repo", "repository", "project", "projects", "simple", "using", "based", "written", "use", "used",
-    "easy", "fast", "new", "open", "source", "open-source", "opensource", "tool", "tools", "library", "app",
-    "application", "applications", "support", "supports", "official", "implementation", "code", "made", "way",
-    "built", "powerful", "lightweight", "modern", "best", "make", "help", "helps", "allows", "provides", "like",
-    "just", "framework", "free", "self", "hosted", "awesome-list", "including", "collection", "list",
+    "github",
+    "repo",
+    "repository",
+    "project",
+    "projects",
+    "simple",
+    "using",
+    "based",
+    "written",
+    "use",
+    "used",
+    "easy",
+    "fast",
+    "new",
+    "open",
+    "source",
+    "open-source",
+    "opensource",
+    "tool",
+    "tools",
+    "library",
+    "app",
+    "application",
+    "applications",
+    "support",
+    "supports",
+    "official",
+    "implementation",
+    "code",
+    "made",
+    "way",
+    "built",
+    "powerful",
+    "lightweight",
+    "modern",
+    "best",
+    "make",
+    "help",
+    "helps",
+    "allows",
+    "provides",
+    "like",
+    "just",
+    "framework",
+    "free",
+    "self",
+    "hosted",
+    "awesome-list",
+    "including",
+    "collection",
+    "list",
 }
 _WORD = re.compile(r"[a-z][a-z0-9+#.-]{2,}")
 
@@ -84,9 +130,6 @@ def ctfidf_names(terms: list[set[str]], galaxies: list[str], systems: list[str])
                 "keywords": kws,
             }
     return out
-
-
-# ---- stage 8: LLM names -----------------------------------------------------------------------------------
 
 
 class ClusterName(BaseModel):
@@ -149,7 +192,9 @@ async def run_name(ctx: Ctx, reserve: int = openrouter.FREE_RESERVE) -> dict:
 
     async def one(cid: str, members: list[int]) -> None:
         nearest = nearest_to_centroid(vectors, members, NEAREST_ONE_LINERS)
-        prompt = system_prompt_input(layout["ctfidf"][cid]["keywords"], [f"{names[i]}: {one_liner_for(ctx.db, repos[names[i]])}" for i in nearest])
+        prompt = system_prompt_input(
+            layout["ctfidf"][cid]["keywords"], [f"{names[i]}: {one_liner_for(ctx.db, repos[names[i]])}" for i in nearest]
+        )
         tried: set[str] = set()
         for _ in range(3):
             try:

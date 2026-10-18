@@ -102,9 +102,7 @@ class GitHub:
             raise GitHubError(str(body["errors"])[:500])
         return body["data"]
 
-    async def stars(
-        self, page_size: int = 50, log: Callable[[str], None] = lambda _: None
-    ) -> tuple[str, list[Repo]]:
+    async def stars(self, page_size: int = 50, log: Callable[[str], None] = lambda _: None) -> tuple[str, list[Repo]]:
         """Every starred repo, newest star first. A page that times out (GitHub's ~10 s limit) is retried at half size."""
         out: list[Repo] = []
         after: str | None = None
@@ -150,9 +148,7 @@ class GitHub:
             parts = []
             for i, (fn, oid, paths) in enumerate(chunk):
                 owner, name = fn.split("/", 1)
-                fields = " ".join(
-                    f'f{j}: object(expression: "{oid}:{_gql_escape(p)}") {{ {_BLOB} }}' for j, p in enumerate(paths)
-                )
+                fields = " ".join(f'f{j}: object(expression: "{oid}:{_gql_escape(p)}") {{ {_BLOB} }}' for j, p in enumerate(paths))
                 parts.append(f'r{i}: repository(owner: "{_gql_escape(owner)}", name: "{_gql_escape(name)}") {{ {fields} }}')
             query = "query { " + " ".join(parts) + " }"
             async with self.sem:

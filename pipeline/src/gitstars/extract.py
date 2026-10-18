@@ -17,15 +17,79 @@ from gitstars.domain import Candidate, CandidateId, Card, GateVerdict, HomepageD
 TokenCounter = Callable[[str], int]
 
 IGNORE_PATTERNS = [
-    "node_modules/", "__pycache__/", "*.pyc", "*.pyo", "*.so", "*.dll", "*.dylib", "*.exe", "*.o", "*.a",
-    "dist/", "build/", "*.egg-info/", "venv/", "env/", ".git/", ".tox/", ".pytest_cache/", ".mypy_cache/",
-    "*.log", ".DS_Store", "Thumbs.db",
-    "package-lock.json", "yarn.lock", "pnpm-lock.yaml", "bun.lockb", "bun.lock", "Cargo.lock", "poetry.lock",
-    "uv.lock", "Gemfile.lock", "composer.lock", "go.sum", "Pipfile.lock", "flake.lock", "*.lock",
-    "target/", ".next/", "out/", "coverage/", "vendor/", ".idea/", ".vscode/", "*.min.js", "*.min.css", "*.map",
-    "*.png", "*.jpg", "*.jpeg", "*.gif", "*.svg", "*.ico", "*.webp", "*.bmp", "*.avif", "*.mp4", "*.mov",
-    "*.webm", "*.mp3", "*.wav", "*.ogg", "*.woff", "*.woff2", "*.ttf", "*.otf", "*.eot", "*.pdf", "*.zip",
-    "*.tar", "*.gz", "*.tgz", "*.7z", "*.jar",
+    "node_modules/",
+    "__pycache__/",
+    "*.pyc",
+    "*.pyo",
+    "*.so",
+    "*.dll",
+    "*.dylib",
+    "*.exe",
+    "*.o",
+    "*.a",
+    "dist/",
+    "build/",
+    "*.egg-info/",
+    "venv/",
+    "env/",
+    ".git/",
+    ".tox/",
+    ".pytest_cache/",
+    ".mypy_cache/",
+    "*.log",
+    ".DS_Store",
+    "Thumbs.db",
+    "package-lock.json",
+    "yarn.lock",
+    "pnpm-lock.yaml",
+    "bun.lockb",
+    "bun.lock",
+    "Cargo.lock",
+    "poetry.lock",
+    "uv.lock",
+    "Gemfile.lock",
+    "composer.lock",
+    "go.sum",
+    "Pipfile.lock",
+    "flake.lock",
+    "*.lock",
+    "target/",
+    ".next/",
+    "out/",
+    "coverage/",
+    "vendor/",
+    ".idea/",
+    ".vscode/",
+    "*.min.js",
+    "*.min.css",
+    "*.map",
+    "*.png",
+    "*.jpg",
+    "*.jpeg",
+    "*.gif",
+    "*.svg",
+    "*.ico",
+    "*.webp",
+    "*.bmp",
+    "*.avif",
+    "*.mp4",
+    "*.mov",
+    "*.webm",
+    "*.mp3",
+    "*.wav",
+    "*.ogg",
+    "*.woff",
+    "*.woff2",
+    "*.ttf",
+    "*.otf",
+    "*.eot",
+    "*.pdf",
+    "*.zip",
+    "*.tar",
+    "*.gz",
+    "*.tgz",
+    "*.7z",
+    "*.jar",
 ]
 _IGNORE = pathspec.PathSpec.from_lines("gitignore", IGNORE_PATTERNS)
 
@@ -45,8 +109,6 @@ def ignored(path: str, is_dir: bool) -> bool:
         return True
     return _IGNORE.match_file(path + "/" if is_dir else path)
 
-
-# ---- markdown ---------------------------------------------------------------------------------------------
 
 _HTML_COMMENT = re.compile(r"<!--.*?-->", re.S)
 _LINKED_IMAGE = re.compile(r"\[!\[[^\]]*\]\([^)]*\)\]\([^)]*\)")
@@ -143,8 +205,6 @@ def clean_markdown(md: str) -> str:
         out.append(line)
     return "\n".join(out).strip()
 
-
-# ---- manifests --------------------------------------------------------------------------------------------
 
 _REQ_NAME = re.compile(r"^\s*([A-Za-z0-9][A-Za-z0-9._-]*)")
 
@@ -291,9 +351,6 @@ def render_manifest(m: Manifest) -> str:
     return "\n".join(rows)
 
 
-# ---- tree -------------------------------------------------------------------------------------------------
-
-
 def render_tree(entries: list[TreeEntry], per_dir: int = TREE_DIR_LIMIT) -> str:
     """Depth-2 tree, directories first, at most `per_dir` entries per directory, then `… +N more`."""
     kept = [e for e in entries if e.path.count("/") <= 1 and not ignored(e.path, e.type == "tree")]
@@ -320,8 +377,6 @@ def render_tree(entries: list[TreeEntry], per_dir: int = TREE_DIR_LIMIT) -> str:
     emit(children.get("", []), "")
     return "\n".join(lines)
 
-
-# ---- extra docs selection ---------------------------------------------------------------------------------
 
 DOC_CANDIDATES: dict[str, CandidateId] = {
     "claude.md": CandidateId.claude_md,
@@ -382,8 +437,6 @@ def choose_blob_paths(entries: list[TreeEntry]) -> list[str]:
     return paths
 
 
-# ---- card -------------------------------------------------------------------------------------------------
-
 CHANGELOG_HEAD_CHARS = 1500
 DOC_CHARS = 4000
 
@@ -426,8 +479,6 @@ def build_card(repo: Repo, tree: list[TreeEntry], blobs: dict[str, str | None], 
         candidates=candidates,
     )
 
-
-# ---- budget -----------------------------------------------------------------------------------------------
 
 BUDGET_TOKENS = 1800
 RICH_README_CHARS = 6000
@@ -487,7 +538,13 @@ def assemble(card: Card, gate: GateVerdict | None, count: TokenCounter, budget: 
             # Up to the rich cap, but trimmed first down to its 2k head, so leftover budget goes to the README
             # instead of going unused when there are no docs (awesome lists, thin repos).
             sections.append(Section("README (head)", _cut(readme, RICH_README_CHARS), HEAD_README_CHARS))
-        for cid in (CandidateId.agents_md, CandidateId.claude_md, CandidateId.docs_index, CandidateId.architecture, CandidateId.changelog_head):
+        for cid in (
+            CandidateId.agents_md,
+            CandidateId.claude_md,
+            CandidateId.docs_index,
+            CandidateId.architecture,
+            CandidateId.changelog_head,
+        ):
             if kept(cid):
                 sections.append(Section(f"{cid.value} ({card.candidates[cid].source})", _cut(card.candidate_text(cid), DOC_CHARS), 300))
     if kept(CandidateId.homepage):

@@ -149,8 +149,6 @@ class Pool:
         self.sem.release()
 
 
-# ---- ranking ----------------------------------------------------------------------------------------------
-
 _TOTAL_PATTERNS = [
     re.compile(r"(\d+(?:\.\d+)?)\s*B\s+total", re.I),
     re.compile(r"out of\s+(\d+(?:\.\d+)?)\s*B", re.I),

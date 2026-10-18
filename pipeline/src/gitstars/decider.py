@@ -86,8 +86,6 @@ class DecisionError(RuntimeError):
     pass
 
 
-# ---- gate -------------------------------------------------------------------------------------------------
-
 GATED = [c for c in CandidateId if c is not CandidateId.manifest]
 # readme_quality on the 600-char preview called most rich READMEs "partial" (24 of the 30 most-starred).
 README_QUALITY_CHARS = 3000
@@ -132,8 +130,6 @@ def parse_gate(resp: DecisionResponse, card: Card) -> GateVerdict:
         quality = ReadmeQuality.missing
     return GateVerdict(keep=keep, readme_quality=quality, model=resp.model)
 
-
-# ---- judge ------------------------------------------------------------------------------------------------
 
 JUDGE_LEVELS = [
     "Wrong or empty: it misdescribes the repository or says nothing useful.",
@@ -189,9 +185,6 @@ def judge_feedback(v: JudgeVerdict) -> str:
     if v.score < JudgeVerdict.MIN_SCORE:
         notes.append("Be more specific and informative about what it is, the problem it solves, and what sets it apart.")
     return " ".join(notes)
-
-
-# ---- client -----------------------------------------------------------------------------------------------
 
 
 class Decider:

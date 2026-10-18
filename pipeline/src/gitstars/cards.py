@@ -33,9 +33,6 @@ def _percentile(values: list[int], q: float) -> int:
     return s[min(len(s) - 1, int(round(q * (len(s) - 1))))]
 
 
-# ---- fetch ------------------------------------------------------------------------------------------------
-
-
 async def run_fetch(ctx: Ctx) -> dict:
     gh = GitHub(github_token())
     t0 = time.monotonic()
@@ -147,9 +144,6 @@ def _has_readme(db: DB, r: Repo) -> bool:
     return any(t for p, t in blobs.items() if "/" not in p and p.lower().startswith("readme"))
 
 
-# ---- homepage ---------------------------------------------------------------------------------------------
-
-
 async def run_homepage(ctx: Ctx) -> dict:
     urls = sorted({u for r in ctx.db.repos() if worth_fetching(r.homepage) and (u := normalize_url(r.homepage))})
     pending = [u for u in urls if ctx.force or _should_fetch(ctx.db.get_homepage(u, HOMEPAGE_VERSION))]
@@ -189,9 +183,6 @@ def homepage_doc(db: DB, repo: Repo) -> HomepageDoc | None:
         return None
     cached = db.get_homepage(url, HOMEPAGE_VERSION)
     return HomepageDoc.model_validate(cached["doc"]) if cached and cached.get("doc") else None
-
-
-# ---- card -------------------------------------------------------------------------------------------------
 
 
 def make_card(db: DB, repo: Repo) -> Card:
@@ -236,9 +227,6 @@ def load_gate(db: DB, repo: Repo, card_sha: str) -> GateVerdict | None:
     if art is None or art.get("input_sha") != card_sha:
         return None
     return GateVerdict.model_validate(art["verdict"])
-
-
-# ---- gate -------------------------------------------------------------------------------------------------
 
 
 async def run_gate(ctx: Ctx) -> dict:

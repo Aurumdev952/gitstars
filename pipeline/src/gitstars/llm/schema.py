@@ -7,9 +7,7 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
-Kind = Literal[
-    "library", "framework", "app", "cli", "tool", "service", "model", "dataset", "awesome-list", "tutorial", "template", "other"
-]
+Kind = Literal["library", "framework", "app", "cli", "tool", "service", "model", "dataset", "awesome-list", "tutorial", "template", "other"]
 
 
 ONE_LINER_HARD_MAX_WORDS = 26

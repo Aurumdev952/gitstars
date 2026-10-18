@@ -106,7 +106,9 @@ def test_manifest_parsing_names_without_versions():
     assert py.dependencies == ["httpx", "pydantic", "pytest"] and py.scripts == ["uvx"]
     cargo = parse_manifest("Cargo.toml", '[package]\nname="fd-find"\nkeywords=["find"]\n[dependencies]\nregex="1"\nclap={version="4"}\n')
     assert cargo.name == "fd-find" and cargo.dependencies == ["regex", "clap"]
-    gomod = parse_manifest("go.mod", "module github.com/a/b\n\nrequire (\n\tgithub.com/spf13/cobra v1.8.0\n\tgolang.org/x/sys v0.1.0 // indirect\n)\n")
+    gomod = parse_manifest(
+        "go.mod", "module github.com/a/b\n\nrequire (\n\tgithub.com/spf13/cobra v1.8.0\n\tgolang.org/x/sys v0.1.0 // indirect\n)\n"
+    )
     assert gomod.name == "github.com/a/b" and gomod.dependencies == ["github.com/spf13/cobra", "golang.org/x/sys"]
     assert parse_manifest("package.json", "{not json") is None
     assert len(parse_manifest("package.json", '{"dependencies":{' + ",".join(f'"d{i}":"1"' for i in range(40)) + "}}").dependencies) == 25
@@ -135,7 +137,11 @@ def test_assemble_respects_budget_and_gate():
             CandidateId.homepage: Candidate(id=CandidateId.homepage, source="https://x", text="Homepage text"),
         },
     )
-    rich = GateVerdict(keep={CandidateId.readme: 0.9, CandidateId.changelog_head: 0.9, CandidateId.homepage: 0.2}, readme_quality=ReadmeQuality.rich, model="m")
+    rich = GateVerdict(
+        keep={CandidateId.readme: 0.9, CandidateId.changelog_head: 0.9, CandidateId.homepage: 0.2},
+        readme_quality=ReadmeQuality.rich,
+        model="m",
+    )
     text = assemble(card, rich, chars4, budget=1800)
     assert chars4(text) <= 1800
     assert text.startswith("# o/r\nDescription: desc\nTopics: cli\nLanguages: Rust")

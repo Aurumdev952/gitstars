@@ -46,8 +46,14 @@ def test_gate_request_shape():
 
 def test_judge_request_uses_score_levels():
     s = Summary(
-        one_liner="Fast find alternative", summary="fd finds files fast with smart defaults.", kind="cli", domain="filesystem",
-        tags=["find", "cli", "rust", "search", "files"], stack=["Rust"], audience=None, highlights=[],
+        one_liner="Fast find alternative",
+        summary="fd finds files fast with smart defaults.",
+        kind="cli",
+        domain="filesystem",
+        tags=["find", "cli", "rust", "search", "files"],
+        stack=["Rust"],
+        audience=None,
+        highlights=[],
     )
     body = dec.judge_request("card text", s).model_dump(mode="json")
     assert body["questions"]["quality"]["type"] == "score" and len(body["questions"]["quality"]["criteria"]) == 5
@@ -77,7 +83,8 @@ def test_parse_rejects_wrong_answer_type():
 def test_parse_judge_maps_score_to_one_to_five():
     resp = dec.DecisionResponse.model_validate(
         {
-            "id": "x", "model": "perplexity/pplx-decider-v1.2-20261016",
+            "id": "x",
+            "model": "perplexity/pplx-decider-v1.2-20261016",
             "answers": {
                 "quality": {"type": "score", "score": 3.2},
                 "unsupported": {"type": "noul", "noul": 0.1},
