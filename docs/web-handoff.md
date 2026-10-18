@@ -112,3 +112,121 @@ Known issues left open:
   `filters.test.ts` uses literal values rather than fixture data.
 - Labels "Off" hides system and repo labels only; galaxy names stay for orientation.
 - The timeline, intro, hull, ribbon lines and quality tiers remain W3 work; `uWarp` is still unread.
+
+## After W3 (polish, effects, UX)
+
+Built:
+- The intro: stars spiral out of the galaxy centre, nebulae gather, labels stagger in and the HUD
+  slides up. Any input fast-forwards it; a deep link skips it; reduced motion gets a fade.
+- The timeline: a histogram, scrubber, playback, births and a date ticker, plus `t` and `?t=`.
+- One ribbon line shader. It draws the kNN arcs and every system constellation (an MST each), and
+  the flat hull outline.
+- A faceted fresnel hull around the focused cluster.
+- Star shader: warp streaks, bokeh depth of field, dead-star styling and birth overshoot.
+- Quality tiers (auto, low, med, high) with chromatic aberration on high only.
+- `bun run models:fetch` for offline semantic search.
+- A UX pass: first-run hint, empty states, error card, contrast test, cursors, tab title and
+  narrow-window layout.
+- Home framing that fills the viewport, and a label pass that does not allocate per frame.
+
+Resolved from W1 and W2:
+- The timeline cursor runs to `1 + birthWindow`, so the newest stars are born.
+- `uWarp` is read.
+- The 16 drei `Line` arcs are one instanced draw.
+- `Labels.tsx` is pooled.
+- Labels and nebulae follow the timeline's births.
+- Idle autorotate yields to timeline playback.
+
+Seams:
+- Intro: `lib/intro.ts` holds the timing table and the pure frame function (`introFrame`,
+  `introCamera`, `labelReveal`, `introDelay`); `components/galaxy/Intro.tsx` applies it each frame
+  at priority -2, ahead of CameraControls.
+  - The store's `intro` phase is `spiral` (HUD held), `settling` (HUD and labels arriving), `fade`
+    (reduced motion) or `done`. It is decided once in `routes/index.tsx` from the landing URL
+    (`isDeepLink`).
+  - HUD chrome opts in with the `hud-enter` utility and `--hud-i` (40 ms stagger); the root's
+    `data-intro="held"` hides it.
+  - Each star's launch delay is the `aDelay` attribute / `attrs.delay` (galaxy hue rank plus seed).
+    The spiral twist grows with distance over `uIntroRadius`. Both live in `layout.glsl` and are
+    mirrored in `lib/layout.ts` (tested).
+- Timeline: the cursor lives outside React in `state/timeline.ts` (`timelineCursor`, `timeline.*`),
+  with `uTimeline = c·(1 + w)`. The shown date is `c·(1 + w) − w/2`. The maths is in `lib/timeline.ts`
+  (tested). Per-galaxy born shares go to `uGalaxyBorn` and per-system shares to
+  `sceneBus.systemBorn`; SceneTweens recomputes both only when the cursor moves.
+- Lines: `components/galaxy/ribbons.ts` (`RibbonBuffer`, `Segment`, `ribbonMaterial`). A segment
+  carries both layouts, intro delays and starred times, so it follows the flat tween, the intro and
+  the timeline in the shader. Per-material uniforms are `uDrawClock`, `uDrawSeconds`, `uFlow`,
+  `uPulseSpeed`, `uPulseGain`, `uRest` and `uHotSystem`. A new kind of line is a new
+  `RibbonBuffer`, not a new shader. Set `galaxy: -1` on segments that belong to no galaxy, so they
+  skip the galaxy-visibility and focus dimming. Arcs alternate their bow side by rank: the spec's
+  single `viewDir × (b − a)` side curled all eight arcs into a whirl.
+- Hull: `ClusterHull.tsx` wraps the members within the 92nd-percentile radius (`lib/hull.ts`), with a
+  sweep reveal. Facets are flat on purpose; smoothed normals lit the whole volume.
+- Quality: `lib/quality.ts` `TIERS` is the one table (DPR, bloom levels, aberration, grain, bokeh).
+  `Quality.tsx` mounts drei `PerformanceMonitor` only on auto, after the intro, and only under the
+  'always' frameloop, with bounds [45, 57] fps. `applyVerdict` (tested) turns its verdicts into
+  tier changes and holds after three. drei's own `flipflops`/`onFallback` is not used, because it
+  counts inclines at the top tier and would drop a steady 60 fps machine to low.
+- Home: `Director.homePose()` uses `lib/framing.ts` `fitPoints` to fit 97% of stars per screen axis
+  from the home orbit (fill 0.84 × 0.74 for HUD chrome). `sceneBus.homeDistance` is "zoom 1" for the
+  label pass and depth of field.
+- Search: `lib/search.ts` `SEMANTIC_FLOOR = 0.72` drops semantic neighbours below the model's noise
+  floor (measured on the real export). A half-matching keyword list with nothing semantic above
+  the floor yields no hits.
+- Model: `bun run models:fetch` vendors 887 MB into `public/models/` (gitignored). The worker
+  probes `/models/.../config.json` and then treats that folder as the remote host (`remoteHost`,
+  `remotePathTemplate`). It does not use `localModelPath`: in local mode transformers.js size-checks
+  each file with an unconsumed full GET, which stalled the 299 MB weight fetch about 20 s behind
+  Chrome's cache lock. Remote mode size-checks with one-byte Range requests.
+
+Measured (dev, Chrome 155 headless, Intel Arc via ANGLE GL, 1600×900, DPR 1):
+- Steady overview with `?freeze` and continuous invalidation (rAF-quantised fps; headless
+  presents at about 85 to 88 fps at most):
+
+  | Scene | Before W3 | After W3, high | After W3, med | After W3, low |
+  |---|---|---|---|---|
+  | Real export | 87.5 fps, 53 draws | 85.4 fps, 56 draws | 88.3 fps, 50 draws | 86.2 fps, 48 draws |
+  | 10k fixture | 86.2 fps, 47 draws | 81.1 fps, 48 draws | 80.9 fps, 42 draws | 80.9 fps, 40 draws |
+
+- Hover-cycling trace (12 top stars, 450 ms apart, unfrozen, high tier):
+
+  | Build | rAF JS p50 | rAF JS p95 | Frame interval p50 | Frame interval p95 | Presented fps (with tracing) |
+  |---|---|---|---|---|---|
+  | Base | 4.5 ms | 21.7 ms | 16.6 ms | 110.6 ms | 29.6 |
+  | W3 | 4.8 ms | 10.0 ms | 11.8 ms | 19.5 ms | 77.8 |
+
+  The base's drei `Line` rebuilds caused its spikes.
+- Idle trace on the real export at high: rAF JS p95 6.1 ms; frame interval p50 11.3 ms and p95
+  18.3 ms, which includes the tracing overhead.
+- Draw calls: 56 at the overview on high. Up to about 70 when 25 system labels show, because each
+  troika label is its own draw.
+- Model from local files (WASM fp16): ready in about 9 to 12 s. Uncached queries take 93 to
+  143 ms; `probe()` overlap@10 is 0.99.
+
+WebGPU (from the models run, Chrome 155 on the Intel Arrow Lake iGPU plus an RTX 5090 Laptop):
+- Default Chrome has no adapter.
+- With `--enable-unsafe-webgpu --enable-features=Vulkan,WebGPU --use-angle=gl --ignore-gpu-blocklist`,
+  an adapter appears (intel / xe-lpg, or nvidia / blackwell with high-performance), and q8 loads and
+  runs on WebGPU. Overlap@10 is 0.97, the load takes 9 to 11 s, and uncached queries take 49 to
+  177 ms.
+- `--use-angle=vulkan` breaks WebGL context creation on this box.
+
+Known issues left open:
+- The pipeline's fully summarised re-export (real galaxy names, separated galaxies) had not landed
+  when W3 ended. W3 was verified on the 2026-10-18T01:01:43Z export (51 summarised).
+- Draw calls exceed the 60 budget when many system labels are visible (one troika draw each);
+  batching the labels (troika `BatchedText`) is the fix.
+- Bokeh and bloom make a close-up hazy at 1024 px; `SceneDriver` `BOKEH` (0.38) is the knob.
+- The view toggle is `role="radiogroup"` without roving tabindex or arrow keys.
+- `vite build` copies `public/models/` (888 MB) into `dist/` when it is present.
+- Timeline brushing has no keyboard path in the panel (the Filters popover's starred slider covers
+  it).
+- Timeline playback turns the camera but does not "slowly pull back" (spec §4).
+- Picking and label gaps use `starPixelRadius`, which mirrors neither the bokeh growth
+  (`1 + 0.9·coc`) nor the birth overshoot. Close up, the outer rim of a bokeh disc does not pick.
+- `SEMANTIC_FLOOR` (0.72) sits 0.01 above the gibberish ceiling measured on WASM fp16. Recheck it if
+  the model, dtype or truncation changes.
+- `layout.test.ts` pins the CPU formula. Nothing executes `layout.glsl`, so keeping the two in step
+  is a review duty.
+- The headless rAF-based fps numbers saturate near the presentation rate (about 85 to 88 fps here).
+  Use a trace's rAF and frame-interval percentiles to compare builds.
