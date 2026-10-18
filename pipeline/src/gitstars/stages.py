@@ -8,7 +8,7 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any
 
-from gitstars import cards, embed, export, layout, naming, summarize
+from gitstars import cards, embed, export, layout, naming, reassign, summarize
 from gitstars.context import Ctx
 
 
@@ -41,6 +41,7 @@ STAGES: dict[str, Stage] = {
         ),
         Stage("embed", embed.EMBED_VERSION, embed.run_embed, "EmbeddingGemma 2 vectors (summary, or v0 card)."),
         Stage("layout", layout.LAYOUT_VERSION, layout.run_layout, "Systems, galaxies, 3-d/2-d positions, neighbours."),
+        Stage("reassign", reassign.REASSIGN_VERSION, reassign.run_reassign, "pplx-decider moves misplaced repos.", uses_llm=True),
         Stage("name", naming.NAME_VERSION, naming.run_name, "LLM names for systems (c-TF-IDF names otherwise).", uses_llm=True),
         Stage("export", 1, export.run_export, "Write galaxy.json and vectors.f16.bin."),
     ]

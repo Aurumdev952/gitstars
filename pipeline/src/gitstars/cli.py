@@ -25,6 +25,7 @@ from gitstars.misfits import SEED as MISFIT_SEED
 from gitstars.misfits import VOTES as MISFIT_VOTES
 from gitstars.misfits import run_misfits
 from gitstars.naming import NAME_RESERVE, cluster_name
+from gitstars.reassign import MOVE_THRESHOLD, ROUNDS
 from gitstars.stages import STAGES
 from gitstars.summarize import job_for, load_summary
 from gitstars.tokens import count_tokens
@@ -111,6 +112,18 @@ def embed(limit: Limit = None, force: Force = False) -> None:
 def layout(force: Force = False) -> None:
     """UMAP + HDBSCAN systems, Ward galaxies, 3-d/2-d positions, top-8 neighbours, c-TF-IDF names."""
     _run("layout", None, force)
+
+
+@app.command()
+def reassign(
+    limit: Limit = None,
+    force: Force = False,
+    threshold: Annotated[float, typer.Option("--threshold", help="Minimum decider probability for a move.")] = MOVE_THRESHOLD,
+    rounds: Annotated[int, typer.Option("--rounds", help="Passes; a pass after moves re-asks only changed candidates.")] = ROUNDS,
+    dry_run: Annotated[bool, typer.Option("--dry-run", help="Ask and cache the picks but keep the layout.")] = False,
+) -> None:
+    """pplx-decider (paid) picks each repo's system from its current one, four neighbours' systems, or none."""
+    _run("reassign", limit, force, threshold=threshold, rounds=rounds, dry_run=dry_run)
 
 
 @app.command()
