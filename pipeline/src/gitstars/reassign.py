@@ -93,7 +93,9 @@ def apply_picks(
 
 
 def pick_key(repo_name: str, summary: dict[str, Any], cards: list[SystemCard]) -> CacheKey:
-    digest = sha([summary["one_liner"], summary["summary"], [c.as_state() for c in cards], PROMPT_VERSION])
+    """Keyed on which systems were offered and how they were named, not on their central members: a round that
+    moved a few repos shifts centroids everywhere, and a shifted sample would not change a pick."""
+    digest = sha([summary["one_liner"], summary["summary"], [[c.id, c.name, c.blurb] for c in cards], PROMPT_VERSION])
     return CacheKey(full_name=repo_name, stage_version=REASSIGN_VERSION, digest=digest)
 
 
@@ -151,11 +153,12 @@ async def run_reassign(ctx: Ctx, threshold: float = MOVE_THRESHOLD, rounds: int 
         return i, pick
 
     picks: dict[int, Pick] = {}
+    # Cards are frozen for the run: a system keeps the name and central members it entered with, so a later round
+    # re-asks only repos whose candidate list changed.
+    cards = system_cards(ctx.db, layout, vectors)
     try:
         for _ in range(rounds):
             stats["rounds"] += 1
-            working = {"names": names, "system": system, "outlier": outlier.tolist(), "ctfidf": layout["ctfidf"]}
-            cards = system_cards(ctx.db, working, vectors)
             cands = Candidates(system, vectors)
             jobs = []
             for i in ctx.take(list(range(len(names)))):

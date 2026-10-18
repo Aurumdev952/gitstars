@@ -3,7 +3,7 @@ import numpy as np
 from gitstars import decider as dec
 from gitstars.candidates import Candidates, SystemCard
 from gitstars.layout import vote_noise
-from gitstars.reassign import Pick, apply_picks, parse_pick, pick_request
+from gitstars.reassign import Pick, apply_picks, parse_pick, pick_key, pick_request
 
 
 def at_degrees(*deg):
@@ -61,3 +61,13 @@ def test_pick_request_and_parse_round_trip():
     assert pick.choice == "g00.s02" and pick.p == 0.75 and pick.current == "g00.s01"
     resp = dec.DecisionResponse.model_validate({"id": "x", "model": "m", "answers": {"home": {"type": "choice", "choice": "none"}}})
     assert parse_pick(resp, ["g00.s01", "g00.s02"]).choice is None
+
+
+def test_pick_key_ignores_a_shifted_central_sample_but_not_a_renamed_candidate():
+    summary = {"one_liner": "z", "summary": "zz"}
+    a = [SystemCard("g00.s01", "Cur", "b", ("o/x: x",)), SystemCard("g00.s02", "Alt", "b", ("o/y: y",))]
+    shifted = [SystemCard("g00.s01", "Cur", "b", ("o/w: w",)), SystemCard("g00.s02", "Alt", "b", ("o/y: y",))]
+    renamed = [SystemCard("g00.s01", "Cur", "b", ("o/x: x",)), SystemCard("g00.s02", "Other", "b", ("o/y: y",))]
+    assert pick_key("o/z", summary, a) == pick_key("o/z", summary, shifted)
+    assert pick_key("o/z", summary, a) != pick_key("o/z", summary, renamed)
+    assert pick_key("o/z", summary, a) != pick_key("o/z", summary, list(reversed(a))), "the current system is always first"
