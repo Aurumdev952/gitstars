@@ -30,18 +30,18 @@ describe('isDeepLink', () => {
 describe('introFrame', () => {
   it('starts dark and collapsed, with the HUD held back', () => {
     const f = introFrame('full', 0)
-    expect(f).toMatchObject({ fade: 0, intro: 0, camera: 0, hud: false, done: false })
+    expect(f).toMatchObject({ fade: 0, intro: 0, dolly: 0, orbit: 0, hud: false, done: false })
   })
 
   it('settles on the resting scene by the end', () => {
     const f = introFrame('full', INTRO.end)
-    expect(f).toMatchObject({ fade: 1, intro: 1, camera: 1, hud: true, done: true })
+    expect(f).toMatchObject({ fade: 1, intro: 1, dolly: 1, orbit: 1, hud: true, done: true })
     expect(labelReveal(f.labelClock, 5)).toBe(1)
   })
 
   it('a skipped intro is the same as a finished one', () => {
     const skipped = introFrame('done', 0)
-    expect(skipped).toMatchObject({ fade: 1, intro: 1, camera: 1, hud: true, done: true })
+    expect(skipped).toMatchObject({ fade: 1, intro: 1, dolly: 1, orbit: 1, hud: true, done: true })
     expect(labelReveal(skipped.labelClock, 31)).toBe(1)
   })
 
@@ -53,7 +53,7 @@ describe('introFrame', () => {
 
   it('the reduced-motion fade only fades: no spiral, no camera move, HUD at once', () => {
     const mid = introFrame('fade', INTRO.fadeOnly / 2)
-    expect(mid).toMatchObject({ intro: 1, camera: 1, hud: true, done: false })
+    expect(mid).toMatchObject({ intro: 1, dolly: 1, orbit: 1, hud: true, done: false })
     expect(mid.fade).toBeCloseTo(0.5)
     expect(introFrame('fade', INTRO.fadeOnly).done).toBe(true)
   })
@@ -63,7 +63,8 @@ describe('introFrame', () => {
     for (let t = 0.05; t <= INTRO.end; t += 0.05) {
       const f = introFrame('full', t)
       expect(f.intro).toBeGreaterThanOrEqual(prev.intro)
-      expect(f.camera).toBeGreaterThanOrEqual(prev.camera)
+      expect(f.dolly).toBeGreaterThanOrEqual(prev.dolly)
+      expect(f.orbit).toBeGreaterThanOrEqual(prev.orbit)
       expect(f.fade).toBeGreaterThanOrEqual(prev.fade)
       prev = f
     }
@@ -81,10 +82,19 @@ describe('labelReveal', () => {
 describe('introCamera', () => {
   it('flies from close in and turned back to the home pose', () => {
     const home = { azimuth: 0.6, distance: 400 }
-    const start = introCamera(0, home)
+    const start = introCamera({ dolly: 0, orbit: 0 }, home)
     expect(start.distance).toBeCloseTo(400 * INTRO.startDistance)
     expect(start.azimuth).toBeCloseTo(0.6 - Math.PI / 6)
-    expect(introCamera(1, home)).toEqual(home)
+    expect(introCamera({ dolly: 1, orbit: 1 }, home)).toEqual(home)
+  })
+
+  it('backs off as fast as the earliest stars fly out, so the burst stays in frame', () => {
+    // At any moment the camera is at least as far out (relative to home) as the earliest star.
+    for (let t = INTRO.stars[0]; t < INTRO.stars[1]; t += 0.1) {
+      const f = introFrame('full', t)
+      const e = 1 - (1 - Math.min(1, f.intro / 0.55)) ** 3
+      expect(introCamera(f, { azimuth: 0, distance: 1 }).distance).toBeGreaterThanOrEqual(e - 1e-9)
+    }
   })
 })
 

@@ -1,4 +1,4 @@
-import { useEffect } from 'react'
+import { useEffect, useLayoutEffect } from 'react'
 import { MotionConfig } from 'motion/react'
 import { useGalaxyStore } from '#/state/store'
 import { handleKey } from '#/state/keymap'
@@ -19,6 +19,12 @@ import { TopBar } from './TopBar'
 export function Hud({ dataName }: { dataName: string }) {
   const reduced = useGalaxyStore((s) => s.settings.motion === 'reduced' || s.frozen)
   const list = useGalaxyStore((s) => s.view === 'list' && s.galaxy !== null)
+
+  // HUD chrome (`hud-enter`) waits off-stage during the intro spiral, then slides up in a stagger.
+  const held = useGalaxyStore((s) => s.intro === 'spiral')
+  useLayoutEffect(() => {
+    document.documentElement.dataset.intro = held ? 'held' : 'shown'
+  }, [held])
 
   useEffect(() => {
     window.addEventListener('keydown', handleKey)

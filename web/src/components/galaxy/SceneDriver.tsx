@@ -56,7 +56,9 @@ export function SceneDriver() {
     const focus = c ? c.distance : home
     u.uFocusDist.value = focus
     const zoomedIn = Math.min(1, Math.max(0, (0.75 - focus / home) / 0.4))
-    u.uBokeh.value = BOKEH * zoomedIn * zoomedIn * (3 - 2 * zoomedIn)
+    // The intro starts close in; its burst would read as a screen of discs.
+    const settled = s.intro === 'done' ? 1 : 0
+    u.uBokeh.value = BOKEH * settled * zoomedIn * zoomedIn * (3 - 2 * zoomedIn)
     u.uPixelRatio.value = state.viewport.dpr
     u.uViewport.value.x = state.size.width * state.viewport.dpr
     u.uViewport.value.y = state.size.height * state.viewport.dpr

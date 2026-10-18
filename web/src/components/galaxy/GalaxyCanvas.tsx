@@ -9,6 +9,7 @@ import { Constellations } from './Constellations'
 import { DebugHooks } from './DebugHooks'
 import { Dust } from './Dust'
 import { Effects } from './Effects'
+import { Intro } from './Intro'
 import { Labels } from './labels/Labels'
 import { NeighborArcs } from './NeighborArcs'
 import { SceneTweens } from './SceneTweens'
@@ -37,6 +38,7 @@ export function GalaxyCanvas({ debug }: { debug: boolean }) {
       camera={{ fov: 50, near: 0.5, far: 6000, position: [0, 80, 320] }}
     >
       <SceneDriver />
+      <Intro galaxy={galaxy} />
       <BackdropFrame hidden={hidden} />
       <Backdrop />
       <Dust center={galaxy.center} />

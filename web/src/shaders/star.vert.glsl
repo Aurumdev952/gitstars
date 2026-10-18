@@ -120,7 +120,10 @@ void main() {
   vHalo = (1.0 - archived * 0.85) / sqrt(max(aDensity, 0.05));
   // A streak spreads the same light over a longer sprite.
   float spread = 1.0 / sqrt(1.0 + vTrail);
-  vIntensity = aBright * twinkle * pulseTerm * (1.0 + 2.0 * flash) * spread * mix(0.25, 1.0, focus) * (1.0 - 0.4 * archived)
+  // Stars still waiting to launch all sit on the intro origin; dimmed, so the pile reads as a hot
+  // core instead of bloom washing over the whole frame.
+  float launched = 0.15 + 0.85 * smoothstep(0.0, 0.25, gsIntroT(aDelay));
+  vIntensity = aBright * twinkle * pulseTerm * (1.0 + 2.0 * flash) * spread * launched * mix(0.25, 1.0, focus) * (1.0 - 0.4 * archived)
              * (1.0 - 0.7 * vFog) * (1.0 + 0.7 * hi) * ghost * lensLight * step(0.001, vis * born);
   vRing = smoothstep(0.62, 0.85, hi);
 }

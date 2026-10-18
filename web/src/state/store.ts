@@ -8,6 +8,12 @@ import { navigateSearch, searchFromFilters } from './url'
 
 export type View = '3d' | 'flat' | 'list'
 
+/**
+ * Where the opening choreography is: the spiral (HUD held back), settling (HUD and labels arriving),
+ * the reduced-motion fade, or done. A deep link starts at done.
+ */
+export type IntroPhase = 'spiral' | 'settling' | 'fade' | 'done'
+
 export type Settings = {
   quality: 'low' | 'med' | 'high'
   motion: 'full' | 'reduced'
@@ -58,6 +64,7 @@ export type GalaxyStore = UrlMirror & {
   /** The star the Forgotten-star button last surfaced; the panel explains why. */
   discovered: number | null
   settings: Settings
+  intro: IntroPhase
   actions: {
     setGalaxy(g: GalaxyIndex): void
     mirrorUrl(m: UrlMirror): void
@@ -77,6 +84,7 @@ export type GalaxyStore = UrlMirror & {
     setSettings(p: Partial<Settings>): void
     setCameraBusy(b: boolean): void
     setDragging(b: boolean): void
+    setIntro(p: IntroPhase): void
   }
 }
 
@@ -105,6 +113,7 @@ export const useGalaxyStore = create<GalaxyStore>()(
     hits: null,
     lens: { state: 'off' },
     discovered: null,
+    intro: 'done',
     settings: {
       quality: 'high',
       motion: prefersReducedMotion() ? 'reduced' : 'full',
@@ -146,6 +155,9 @@ export const useGalaxyStore = create<GalaxyStore>()(
       setSettings: (p) => set({ settings: { ...get().settings, ...p } }),
       setCameraBusy: (cameraBusy) => set({ cameraBusy }),
       setDragging: (dragging) => set({ dragging }),
+      setIntro: (intro) => {
+        if (get().intro !== intro) set({ intro })
+      },
     },
   })),
 )

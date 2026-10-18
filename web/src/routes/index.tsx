@@ -1,4 +1,4 @@
-import { lazy, Suspense, useEffect } from 'react'
+import { lazy, Suspense, useEffect, useState } from 'react'
 import { ClientOnly, createFileRoute, stripSearchParams, useNavigate } from '@tanstack/react-router'
 import { Hud } from '#/components/hud/Hud'
 import { StarMark } from '#/components/hud/TopBar'
@@ -7,6 +7,7 @@ import { useGalaxyStore } from '#/state/store'
 import { bindNavigate, filtersFromSearch, searchDefaults, searchSchema } from '#/state/url'
 import { startSearchRunner, warmModel } from '#/workers/searchClient'
 import { seedDiscovery } from '#/state/commands'
+import { introMode, isDeepLink } from '#/lib/intro'
 
 // three, R3F and the post chain load in their own chunk, in parallel with galaxy.json.
 const GalaxyCanvas = lazy(() => import('#/components/galaxy/GalaxyCanvas'))
@@ -39,6 +40,14 @@ function Home() {
   useEffect(() => {
     useGalaxyStore.getState().actions.setGalaxy(galaxy)
   }, [galaxy])
+
+  // Decided once from the landing URL, during the first render so the HUD below already renders
+  // for it (no flash of chrome before the spiral). Later navigation never replays it.
+  useState(() => {
+    const s = useGalaxyStore.getState()
+    const mode = introMode({ deepLink: isDeepLink(search), reducedMotion: s.settings.motion === 'reduced', frozen: search.freeze })
+    s.actions.setIntro(mode === 'full' ? 'spiral' : mode)
+  })
 
   useEffect(() => {
     const stop = startSearchRunner()

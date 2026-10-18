@@ -1,4 +1,4 @@
-import { useRef } from 'react'
+import { useRef, type CSSProperties } from 'react'
 import { useGalaxyStore } from '#/state/store'
 import { cn } from '#/lib/utils'
 import { useOccluder } from './useOccluder'
@@ -26,7 +26,8 @@ export function Legend() {
     <nav
       ref={ref}
       aria-label="Galaxies"
-      className="glass fixed bottom-5 left-5 z-10 w-[248px] rounded-[var(--radius-panel)] px-2 py-2.5"
+      className="glass hud-enter fixed bottom-5 left-5 z-10 w-[248px] rounded-[var(--radius-panel)] px-2 py-2.5"
+      style={{ '--hud-i': 2 } as CSSProperties}
       onPointerLeave={() => hoverCluster(null)}
     >
       <h2 className="px-2.5 pb-1.5 text-[11.5px] font-medium text-ink-faint">Galaxies</h2>

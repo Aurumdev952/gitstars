@@ -1,4 +1,4 @@
-import { useRef } from 'react'
+import { useRef, useState, type CSSProperties } from 'react'
 import { motion } from 'motion/react'
 import { Box, List, Map as MapIcon, Search, Settings2, Sparkles, X } from 'lucide-react'
 import { useGalaxyStore, type Settings, type View } from '#/state/store'
@@ -35,6 +35,8 @@ function Wordmark({ dataName }: { dataName: string }) {
   const g = useGalaxyStore((s) => s.galaxy)
   const shown = useGalaxyStore((s) => s.filtered?.count ?? null)
   const ref = useRef<HTMLElement>(null)
+  // The wordmark letter-spaces in as the intro opens; on a deep link it is simply there.
+  const [entering] = useState(() => useGalaxyStore.getState().intro === 'spiral')
   useOccluder(ref)
   if (!g) return null
   const { counts } = g.data.meta
@@ -43,7 +45,13 @@ function Wordmark({ dataName }: { dataName: string }) {
     <header ref={ref} className="pointer-events-none fixed top-0 left-0 z-10 px-6 pt-5 select-none">
       <h1 className="flex items-center gap-2.5 text-[19px] font-medium tracking-[-0.01em] text-ink [text-shadow:0_1px_12px_rgb(0_0_0/0.8)]">
         <StarMark className="size-[18px] text-starlight drop-shadow-[0_0_6px_oklch(0.86_0.12_85/0.7)]" />
-        gitstars
+        <motion.span
+          initial={entering ? { letterSpacing: '0.6em', opacity: 0, filter: 'blur(6px)' } : false}
+          animate={{ letterSpacing: '-0.01em', opacity: 1, filter: 'blur(0px)' }}
+          transition={{ duration: 1.2, ease: [0.16, 0.8, 0.24, 1] }}
+        >
+          gitstars
+        </motion.span>
         {dataName !== 'galaxy' && (
           <span className="rounded-full border border-glass-border px-2 py-0.5 font-mono text-[10.5px] font-normal tracking-normal text-ink-faint">
             {dataName}
@@ -83,7 +91,10 @@ function SearchCluster() {
   useOccluder(ref)
   const facets = activeFacets(filters)
   return (
-    <div ref={ref} className="fixed top-4 left-1/2 z-20 flex w-[min(440px,calc(100vw-2rem))] -translate-x-1/2 flex-col items-center gap-2 max-[1100px]:top-[76px]">
+    <div
+      ref={ref}
+      style={{ '--hud-i': 0 } as CSSProperties}
+      className="hud-enter fixed top-4 left-1/2 z-20 flex w-[min(440px,calc(100vw-2rem))] -translate-x-1/2 flex-col items-center gap-2 max-[1100px]:top-[76px]">
       <div className="glass flex h-10 w-full items-center rounded-full text-[13.5px] text-ink-faint">
         <button
           type="button"
@@ -203,7 +214,7 @@ function TopRight() {
   const ref = useRef<HTMLDivElement>(null)
   useOccluder(ref)
   return (
-    <div ref={ref} className="fixed top-4 right-4 z-20 flex items-center gap-2">
+    <div ref={ref} style={{ '--hud-i': 1 } as CSSProperties} className="hud-enter fixed top-4 right-4 z-20 flex items-center gap-2">
       <div role="radiogroup" aria-label="View" className="glass flex h-9 items-center rounded-full p-1">
         {VIEWS.map(({ id, label, icon: Icon, key }) => (
           <button
