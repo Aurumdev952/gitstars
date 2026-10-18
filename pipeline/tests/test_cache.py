@@ -1,3 +1,4 @@
+import asyncio
 import json
 import sqlite3
 import time
@@ -11,7 +12,7 @@ from gitstars.config import Paths
 from gitstars.context import Ctx
 from gitstars.db import DB
 from gitstars.domain import GateVerdict, ReadmeQuality, Repo, sha
-from gitstars.llm.openrouter import TransportError
+from gitstars.llm.openrouter import RequestBudget, TransportError
 from gitstars.llm.pool import ModelSlot, Pool, rank
 from gitstars.summarize import RunState, job_for, load_summary, pending_jobs
 
@@ -52,7 +53,8 @@ def ctx(tmp_path):
 
 
 def summarized(ctx: Ctx, r: Repo) -> None:
-    ctx.db.put_artifact("summary", job_for(ctx.db, r).key, {"summary": json.loads(VALID), "quality": 0.8})
+    verdict = {"score": 4.2, "p_unsupported": 0.1, "p_generic": 0.1, "model": "judge"}
+    ctx.db.put_artifact("summary", job_for(ctx.db, r).key, {"summary": json.loads(VALID), "verdict": verdict, "quality": 0.8})
 
 
 def test_push_that_keeps_the_card_keeps_gate_and_summary(ctx):
@@ -154,3 +156,73 @@ async def test_permanent_refusal_is_remembered_across_runs(ctx):
     stale = {"a:free": {"reason": "x", "at": time.time() - 8 * 86400}}
     ctx.db.put_global("disabled_models", stale)
     assert ctx.db.disabled_models() == frozenset(), "a refusal expires after a week"
+
+
+class FakeDecider:
+    def __init__(self, fail_first: int = 0, score: float = 3.0):
+        self.calls = 0
+        self.fail_first = fail_first
+        self.score = score
+
+    async def decide(self, req):
+        from gitstars.decider import DecisionError, DecisionResponse
+
+        self.calls += 1
+        if self.calls <= self.fail_first:
+            raise DecisionError("decisions http 503")
+        raw = {
+            "id": "d1",
+            "model": "judge",
+            "answers": {
+                "quality": {"type": "score", "score": self.score},
+                "unsupported": {"type": "noul", "noul": 0.05},
+                "generic": {"type": "noul", "noul": 0.05},
+            },
+        }
+        return DecisionResponse.model_validate(raw), raw
+
+
+class CountingTransport:
+    """Every reply parses as JSON but breaks the schema, so each hop also asks for a repair."""
+
+    def __init__(self):
+        self.calls = 0
+
+    async def complete(self, slot, messages, schema):
+        self.calls += 1
+        return '{"one_liner": 1}'
+
+
+async def test_request_budget_caps_hops_and_repairs_across_concurrent_jobs(ctx):
+    rs = [repo(f"o/r{i}") for i in range(6)]
+    ctx.db.upsert_repos(rs)
+    run_card(ctx)
+    slots = [ModelSlot(f"m{i}:free", rpm=None) for i in range(15)]
+    transport = CountingTransport()
+    state = RunState("openrouter", Pool(slots, concurrency=15), transport, FakeDecider(), budget=RequestBudget(10))
+    await asyncio.gather(*(summarize.summarize_repo(state, ctx, j) for j in pending_jobs(ctx)))
+    assert transport.calls == 10 and state.requests == 10, "never more requests than the budget"
+    assert state.stop and "budget" in state.stop
+    assert state.failed_repos == 0, "repos cut off by the budget stay pending instead of counting as failures"
+    assert len(pending_jobs(ctx)) == 6
+
+
+async def test_a_summary_whose_judge_failed_is_judged_again_without_regenerating(ctx):
+    r = repo("o/a")
+    ctx.db.upsert_repos([r])
+    run_card(ctx)
+    pool = Pool([ModelSlot("b:free", rpm=None)], concurrency=1)
+    decider = FakeDecider(fail_first=2, score=3.5)
+    state = RunState("openrouter", pool, RefusingTransport(), decider)
+    await summarize.summarize_repo(state, ctx, pending_jobs(ctx)[0])
+    assert load_summary(ctx.db, r)["verdict"] is None, "both judge tries failed, the summary is kept unjudged"
+
+    (job,) = pending_jobs(ctx)
+    assert job.unjudged is not None
+    transport = CountingTransport()
+    state = RunState("openrouter", pool, transport, decider)
+    await summarize.summarize_repo(state, ctx, job)
+    art = load_summary(ctx.db, r)
+    assert transport.calls == 0, "re-judging spends no summarizer requests"
+    assert art["passed"] and art["quality"] == 0.875, "score 3.5 on the 0-based scale is 4.5 of 5"
+    assert pending_jobs(ctx) == []

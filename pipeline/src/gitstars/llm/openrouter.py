@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import asyncio
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any
 
 import httpx
@@ -34,12 +34,14 @@ class FatalProviderError(RuntimeError):
 @dataclass
 class ChatTransport:
     base_url: str
-    headers: dict[str, str]
+    headers: dict[str, str] = field(repr=False)
     temperature: float = 0.3
     top_p: float = 0.95
     max_tokens: int = 1500
     extra_body: dict[str, Any] | None = None
     timeout: float = 120.0
+    # OpenRouter only: route structured requests to endpoints that honour response_format.
+    require_parameters: bool = False
 
     def __post_init__(self) -> None:
         self.client = httpx.AsyncClient(timeout=httpx.Timeout(self.timeout, connect=15.0))
@@ -60,6 +62,8 @@ class ChatTransport:
                 "type": "json_schema",
                 "json_schema": {"name": schema.name, "strict": True, "schema": schema.schema},
             }
+            if self.require_parameters:
+                body["provider"] = {"require_parameters": True}
         if slot.reasoning:
             body["reasoning"] = slot.reasoning
         if self.extra_body:
@@ -134,7 +138,36 @@ async def build_pool(key: str, exclude: frozenset[str] = frozenset()) -> tuple[P
         catalog = await fetch_catalog(client)
         health = await fetch_health(client, [m["id"] for m in catalog if eligible(m) and m["id"] not in exclude])
     slots = rank(catalog, health, rpm=PER_MODEL_RPM, exclude=exclude)
-    return Pool(slots, concurrency=MAX_IN_FLIGHT, name="openrouter"), ChatTransport(OPENROUTER_API, openrouter_headers(key))
+    return Pool(slots, concurrency=MAX_IN_FLIGHT, name="openrouter"), ChatTransport(
+        OPENROUTER_API, openrouter_headers(key), require_parameters=True
+    )
+
+
+class RequestBudget:
+    """Requests a run may still send; `None` means unmetered (local vLLM)."""
+
+    def __init__(self, remaining: int | None = None):
+        self.remaining = remaining
+
+    @property
+    def spent(self) -> bool:
+        return self.remaining is not None and self.remaining <= 0
+
+    def take(self) -> bool:
+        if self.remaining is None:
+            return True
+        if self.remaining <= 0:
+            return False
+        self.remaining -= 1
+        return True
+
+    def refund(self) -> None:
+        if self.remaining is not None:
+            self.remaining += 1
+
+    def cap(self, headroom: int) -> None:
+        if self.remaining is not None:
+            self.remaining = min(self.remaining, headroom)
 
 
 @dataclass(frozen=True)
@@ -151,11 +184,19 @@ class Quota:
         return max(0, self.free_remaining - reserve)
 
 
-async def read_quota(key: str) -> Quota:
-    async with httpx.AsyncClient(timeout=20.0, headers={"Authorization": f"Bearer {key}"}) as client:
-        k, c = await asyncio.gather(client.get(f"{OPENROUTER_API}/key"), client.get(f"{OPENROUTER_API}/credits"))
-    k.raise_for_status()
-    c.raise_for_status()
+async def read_quota(key: str, attempts: int = 3) -> Quota:
+    """Free-request counter and credit balance; retried, since one blip shouldn't end a long run."""
+    for i in range(attempts):
+        try:
+            async with httpx.AsyncClient(timeout=20.0, headers={"Authorization": f"Bearer {key}"}) as client:
+                k, c = await asyncio.gather(client.get(f"{OPENROUTER_API}/key"), client.get(f"{OPENROUTER_API}/credits"))
+            k.raise_for_status()
+            c.raise_for_status()
+            break
+        except httpx.HTTPError:
+            if i == attempts - 1:
+                raise
+            await asyncio.sleep(2.0 * (i + 1))
     free = k.json()["data"]["free_model_daily_requests"]
     credits = c.json()["data"]
     return Quota(
