@@ -1,6 +1,6 @@
 # gitstars frontend: implementation plan
 
-The project directory (`the repo root`) is empty, and no neighbouring project or local cache has three, R3F or TanStack installed. So this plan is greenfield. Library API details below come from my knowledge of those libraries, not from source I read here. Each phase therefore starts with a smoke check of the APIs it depends on.
+This plan was written before any frontend code existed, so it is greenfield. Library API details below come from my knowledge of those libraries, not from source I read here. Each phase therefore starts with a smoke check of the APIs it depends on.
 
 ---
 

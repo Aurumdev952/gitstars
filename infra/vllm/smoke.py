@@ -6,7 +6,7 @@
 """Smoke test and concurrency sweep for the local gemma-4-26b vLLM server.
 
 Timing is done in Python from usage.completion_tokens. Shell tools mis-parse
-decimals under this laptop's comma locale (measured on this laptop).
+decimals under a comma decimal locale.
 """
 
 import argparse
