@@ -24,6 +24,40 @@ export type FitOptions = {
 
 export type Framing = { target: Vec3; distance: number }
 
+export type Orbit = { azimuth: number; polar: number }
+
+/**
+ * The orbit from which galaxies overlap least on screen: for each candidate angle, every pair's
+ * projected anchor distance over the sum of their extents, scored by the mean of the three
+ * tightest pairs. One fixed angle suits one layout; the same angle on another can look straight
+ * down a row of galaxies and stack their names.
+ */
+export function homeAngle(anchors: Vec3[], extents: number[], fallback: Orbit): Orbit {
+  if (anchors.length < 3) return fallback
+  let best = fallback
+  let bestScore = -Infinity
+  for (let a = 0; a < 24; a++) {
+    for (const polar of [0.8, 0.95, 1.1, 1.25, 1.4]) {
+      const azimuth = (a / 24) * Math.PI * 2
+      const { right, up } = orbitBasis(azimuth, polar)
+      const proj = anchors.map((p) => [p[0] * right[0] + p[1] * right[1] + p[2] * right[2], p[0] * up[0] + p[1] * up[1] + p[2] * up[2]])
+      const ratios: number[] = []
+      for (let i = 0; i < proj.length; i++) {
+        for (let j = i + 1; j < proj.length; j++) {
+          ratios.push(Math.hypot(proj[i]![0]! - proj[j]![0]!, proj[i]![1]! - proj[j]![1]!) / (extents[i]! + extents[j]! || 1))
+        }
+      }
+      ratios.sort((x, y) => x - y)
+      const score = (ratios[0]! + ratios[1]! + ratios[2]!) / 3
+      if (score > bestScore) {
+        bestScore = score
+        best = { azimuth, polar }
+      }
+    }
+  }
+  return best
+}
+
 function quantileOf(xs: Float64Array, q: number) {
   const s = Float64Array.from(xs).sort()
   return s[Math.min(s.length - 1, Math.max(0, Math.floor(q * (s.length - 1))))]!
