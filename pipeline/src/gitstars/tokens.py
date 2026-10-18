@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from functools import cache
+from functools import cache, lru_cache
 
 from tokenizers import Tokenizer
 
@@ -13,5 +13,6 @@ def _tokenizer() -> Tokenizer:
     return Tokenizer.from_pretrained(EMBED_MODEL)
 
 
+@lru_cache(maxsize=1 << 16)
 def count_tokens(text: str) -> int:
     return len(_tokenizer().encode(text, add_special_tokens=False).ids)

@@ -38,8 +38,22 @@ uv run infra/vllm/smoke.py
 It waits for `/health`, checks one `json_schema` structured response, then sweeps c=16/32/64 with
 ~1.5k-token prompts and 300 output tokens. Per-seq tok/s, aggregate tok/s and TTFT are timed in
 Python from `usage.completion_tokens` because this box's comma locale breaks `curl -w` and `awk`
-timing. For reference, doc 18 measured about 2.9k aggregate tok/s at c=16 and 4.2k at c=64 on config D
-with 400 output tokens. Expect similar, not identical, numbers.
+timing. Measured on 2026-10-18 with this compose file (FLASHINFER_CUTLASS MoE, 2048 batched tokens):
+
+| conc | per-seq tok/s | agg tok/s | TTFT p50 s | TTFT max s |
+|---|---|---|---|---|
+| 16 | 36.0 | 439 | 2.26 | 4.11 |
+| 32 | 21.4 | 488 | 4.48 | 8.67 |
+| 64 | 10.0 | 273 | 19.88 | 57.06 |
+
+The sweep's prompts are distinct filler, so it measures cold prefill; at c=64 it is prefill-bound. Real
+summarize prompts share a ~700-token system prefix and ran 40 repos in 27 s. Per-seq tok/s at c=16 matches
+doc 18 (37.7); doc 18's aggregate column counted differently and is not comparable.
+
+The structured-output check uses a bare prompt with no system message, and about 1 in 6 of those
+requests runs away (trailing whitespace or a repeated phrase until `max_tokens`) on either MoE backend
+(5/30 FLASHINFER_CUTLASS, 2/30 Marlin). Rerun it if it fails once. The summarize prompt did not show this
+(40/40 parsed).
 
 ## Log lines to confirm before trusting the config
 
@@ -49,12 +63,13 @@ A config that passes `/health` is not necessarily a working config, so check the
 |---|---|---|
 | attention backend | `TRITON_ATTN` selected | Gemma 4's heterogeneous head sizes can pick a backend that is slow or wrong on SM120. Do not tune further until this holds. |
 | NVFP4 MoE backend | A non-Marlin backend (a FlashInfer or CUTLASS FP4 path) | Marlin works but dequantizes weights. Treat it as a fallback, not the target. |
-| `Maximum concurrency for 32,768 tokens per request` | 8x or more | KV pool is too small. Lower `--max-num-batched-tokens` before lowering utilization. |
+| `Maximum concurrency for 32,768 tokens per request` | about 7x or more | KV pool is too small. Lower `--max-num-batched-tokens` before lowering utilization. With 4096 it was 4.70x (153,931 tokens) and c=64 queued 24 requests at 95% KV; with 2048 it was 7.00x and 8.31x on two starts (229k and 272k tokens). |
 | `GPU KV cache size` | tens of thousands of tokens | Do not tune by this number alone. At high utilization the planner can eat activation headroom and OOM on the first real request. |
 
 ## Fallbacks
 
-- Garbage or repeated-token output: add `--moe-backend marlin`. Compose: append it to `command`.
+- Garbage or repeated-token output: add `--moe-backend marlin`. Checked on 2026-10-18: on 60 repos the
+  judge scored Marlin 0.780 and FLASHINFER_CUTLASS 0.774 mean quality, so CUTLASS stays the default. Compose: append it to `command`.
   Native: `infra/vllm/serve-native.sh --moe-backend marlin`.
 - OOM during CUDA-graph capture or under load: lower `--max-num-batched-tokens` to 2048 first
   (doc 18 config C), then `--gpu-memory-utilization` to 0.92.
@@ -72,9 +87,9 @@ A config that passes `/health` is not necessarily a working config, so check the
 - `--kv-cache-dtype fp8`. `nvfp4` KV corrupts output on SM120. `fp8_per_token_head` loses about 22%
   capacity.
 - No `--quantization`. compressed-tensors is auto-detected from the checkpoint.
-- `--max-num-seqs 64 --max-num-batched-tokens 4096`. Our requests are 2-3k tokens. Larger batched
-  tokens buy prefill speed but take activation memory from the KV pool, and 16384 OOMed in graph
-  capture in doc 18.
+- `--max-num-seqs 64 --max-num-batched-tokens 2048`. Our requests are 2-3k tokens. Larger batched
+  tokens buy prefill speed but take activation memory from the KV pool: 4096 left 4.70x concurrency
+  at 32k, 2048 left 7-8x, and 16384 OOMed in graph capture in doc 18.
 - `--enable-prefix-caching --enable-chunked-prefill`. Summarize prompts share a long system
   prefix. Chunking keeps decode latency steady beside long prefills.
 - `--async-scheduling`. Overlaps scheduling with GPU execution. Pairs with

@@ -5,22 +5,22 @@ from __future__ import annotations
 import asyncio
 import json
 import time
-from dataclasses import dataclass, field
-from typing import Literal
+from dataclasses import dataclass, field, replace
 
 from pydantic import ValidationError
 from rich.progress import Progress
 
 from gitstars import decider as dec
 from gitstars.cards import load_card, load_gate
-from gitstars.config import openrouter_key
-from gitstars.context import Ctx, sha
-from gitstars.domain import JudgeVerdict, Repo
+from gitstars.config import Provider, openrouter_key
+from gitstars.context import Ctx
+from gitstars.db import DB
+from gitstars.domain import CacheKey, JudgeVerdict, Repo, sha
 from gitstars.extract import assemble
 from gitstars.llm import local, openrouter
-from gitstars.llm.openrouter import ChatTransport, FatalProviderError, TransportError, read_quota
+from gitstars.llm.openrouter import ChatTransport, FatalProviderError, RequestBudget, TransportError, read_quota
 from gitstars.llm.pool import ModelSlot, Pool, PoolExhausted
-from gitstars.llm.prompts import SYSTEM, repair_prompt, user_prompt
+from gitstars.llm.prompts import PROMPT_VERSION, SYSTEM, repair_prompt, user_prompt
 from gitstars.llm.schema import SUMMARY_SCHEMA, Summary, parse_summary
 from gitstars.tokens import count_tokens
 
@@ -28,10 +28,12 @@ SUMMARY_VERSION = 1
 MAX_JUDGE_RETRIES = 2
 # Free upstreams 429 often (22 of 66 requests in the first 30-repo run); a 429 is cheap, so hop further.
 MAX_MODEL_HOPS = 6
-WORST_CASE_REQUESTS_PER_REPO = (1 + MAX_JUDGE_RETRIES) * 2
-BATCH_SIZE = 30
-
-Provider = Literal["openrouter", "local"]
+JOBS_IN_FLIGHT = 30
+# The decider sees every job's judge call; local runs keep 128 jobs in flight.
+JUDGE_CONCURRENCY = 16
+QUOTA_CHECK_EVERY = 25
+# A job that finds no untried model with capacity for this long is left for a later run.
+MODEL_WAIT_S = 600.0
 
 
 @dataclass
@@ -40,6 +42,13 @@ class Attempt:
     summary: Summary
     verdict: JudgeVerdict | None
 
+    def record(self) -> dict:
+        return {"model": self.model, "verdict": self.verdict.model_dump() if self.verdict else None, "passed": self.passed}
+
+    @property
+    def passed(self) -> bool:
+        return bool(self.verdict and self.verdict.passed)
+
 
 @dataclass
 class RunState:
@@ -47,13 +56,16 @@ class RunState:
     pool: Pool
     transport: ChatTransport
     decider: dec.Decider
+    budget: RequestBudget = field(default_factory=RequestBudget)
     requests: int = 0
+    unbilled: int = 0
     judged: int = 0
     passed: int = 0
     failed_repos: int = 0
     judge_cost: float = 0.0
     models: dict[str, int] = field(default_factory=dict)
     stop: str | None = None
+    judge_slots: asyncio.Semaphore = field(default_factory=lambda: asyncio.Semaphore(JUDGE_CONCURRENCY))
 
 
 async def _generate(
@@ -62,19 +74,36 @@ async def _generate(
     """One summary from the best available model; transport errors and unparseable output move to the next model."""
     messages = [{"role": "system", "content": SYSTEM}, {"role": "user", "content": user_prompt(card_text, feedback)}]
     for _ in range(MAX_MODEL_HOPS):
-        try:
-            slot = await state.pool.acquire(exclude=tried)
-        except PoolExhausted:
+        if state.stop is not None:
             return None
-        tried.add(slot.id)
+        if not state.budget.take():
+            state.stop = f"free request budget spent ({state.requests} sent this run)"
+            return None
+        try:
+            slot = await state.pool.acquire(exclude=tried, max_wait=MODEL_WAIT_S)
+        except PoolExhausted:
+            state.budget.refund()
+            return None
+        if len(state.pool.slots) > 1:
+            # With one model (local vLLM) a retry samples the same model again instead of giving up.
+            tried.add(slot.id)
         t0 = time.monotonic()
         try:
             summary = await _complete_and_parse(state, slot, messages)
         except TransportError as exc:
             state.pool.release(slot, False, exc.retry_after, disable=exc.permanent)
+            if not exc.billed:
+                state.budget.refund()
+                state.unbilled += 1
+            if exc.permanent:
+                ctx.db.disable_model(slot.id, str(exc))
             ctx.db.log_llm_call(repo.full_name, state.provider, slot.id, f"error: {exc}"[:200], time.monotonic() - t0)
             continue
-        except FatalProviderError:
+        except FatalProviderError as exc:
+            state.pool.release(slot, False)
+            state.stop = f"provider refused requests: {exc}"
+            return None
+        except BaseException:
             state.pool.release(slot, False)
             raise
         state.pool.release(slot, True)
@@ -91,8 +120,12 @@ async def _complete_and_parse(state: RunState, slot: ModelSlot, messages: list[d
     except json.JSONDecodeError as exc:
         raise TransportError(f"invalid JSON: {exc}") from exc
     except ValidationError as exc:
-        # Parsed JSON that breaks a field rule gets one repair turn on the same model before moving on.
-        slot.starts.append(state.pool.clock.now())
+        # Parsed JSON that breaks a field rule gets one repair turn on the same model, when the slot's rate window
+        # and the run's request budget both allow one more request.
+        now = state.pool.clock.now()
+        if slot.free_at(now) > now or not state.budget.take():
+            raise TransportError(f"invalid, no room to repair: {str(exc)[:120]}") from exc
+        slot.starts.append(now)
         state.requests += 1
         repaired = await state.transport.complete(
             slot,
@@ -106,17 +139,23 @@ async def _complete_and_parse(state: RunState, slot: ModelSlot, messages: list[d
 
 
 async def _judge(state: RunState, ctx: Ctx, repo: Repo, card_text: str, summary: Summary) -> JudgeVerdict | None:
+    """The decider's verdict, retried once on a transport or parse failure; None if both fail."""
     req = dec.judge_request(card_text, summary)
-    try:
-        resp, raw = await state.decider.decide(req)
-        verdict = dec.parse_judge(resp)
-    except (dec.DecisionError, ValueError) as exc:
-        ctx.db.log_decision(repo.full_name, "judge", req.model_dump(mode="json"), None, str(exc)[:500])
-        return None
-    ctx.db.log_decision(repo.full_name, "judge", req.model_dump(mode="json"), raw, None)
-    if resp.usage and resp.usage.cost:
-        state.judge_cost += resp.usage.cost
-    return verdict
+    for attempt in range(2):
+        try:
+            async with state.judge_slots:
+                resp, raw = await state.decider.decide(req)
+            verdict = dec.parse_judge(resp)
+        except (dec.DecisionError, ValueError) as exc:
+            ctx.db.log_decision(repo.full_name, "judge", req.model_dump(mode="json"), None, str(exc)[:500])
+            if attempt == 0:
+                await asyncio.sleep(2.0)
+            continue
+        ctx.db.log_decision(repo.full_name, "judge", req.model_dump(mode="json"), raw, None)
+        if resp.usage and resp.usage.cost:
+            state.judge_cost += resp.usage.cost
+        return verdict
+    return None
 
 
 def _better(a: Attempt | None, b: Attempt) -> Attempt:
@@ -129,16 +168,41 @@ def _better(a: Attempt | None, b: Attempt) -> Attempt:
 
 @dataclass(frozen=True)
 class Job:
-    """One repo to summarize. Its cache digest is the exact text the model sees, so a new gate verdict or a
-    change to budget assembly re-summarizes it without a commit."""
+    """One repo to summarize. Its cache digest covers the exact text the model sees plus the prompt and judge
+    versions, so a new gate verdict or budget change re-summarizes it and a push that leaves the card alone doesn't."""
 
     repo: Repo
     card_text: str
     gated: bool
+    # A stored summary whose judge call failed: judge it again before generating anything new.
+    unjudged: dict | None = None
 
     @property
     def input_sha(self) -> str:
         return sha(self.card_text)
+
+    @property
+    def key(self) -> CacheKey:
+        return CacheKey(
+            full_name=self.repo.full_name,
+            stage_version=SUMMARY_VERSION,
+            digest=sha([self.input_sha, PROMPT_VERSION, dec.JUDGE_PROMPT_VERSION]),
+        )
+
+
+def job_for(db: DB, repo: Repo) -> Job | None:
+    loaded = load_card(db, repo)
+    if loaded is None:
+        return None
+    card, art = loaded
+    gate = load_gate(db, repo, art["input_sha"])
+    return Job(repo, assemble(card, gate, count_tokens), gate is not None)
+
+
+def load_summary(db: DB, repo: Repo) -> dict | None:
+    """The summary artifact made from the repo's current card text, or None."""
+    job = job_for(db, repo)
+    return db.get_artifact("summary", job.key) if job else None
 
 
 def pending_jobs(ctx: Ctx) -> list[Job]:
@@ -146,14 +210,14 @@ def pending_jobs(ctx: Ctx) -> list[Job]:
     for repo in ctx.selected("stars"):
         if ctx.limit is not None and len(jobs) >= ctx.limit:
             break
-        loaded = load_card(ctx.db, repo)
-        if loaded is None:
+        job = job_for(ctx.db, repo)
+        if job is None:
             continue
-        card, art = loaded
-        gate = load_gate(ctx.db, repo, art["input_sha"])
-        job = Job(repo, assemble(card, gate, count_tokens), gate is not None)
-        if ctx.cached("summary", repo, SUMMARY_VERSION, input_sha=job.input_sha) is None:
+        cached = ctx.cached("summary", job.key)
+        if cached is None:
             jobs.append(job)
+        elif cached.get("verdict") is None:
+            jobs.append(replace(job, unjudged=cached))
     return jobs
 
 
@@ -163,34 +227,43 @@ async def summarize_repo(state: RunState, ctx: Ctx, job: Job) -> None:
     best: Attempt | None = None
     attempts: list[dict] = []
     feedback: str | None = None
-    for _ in range(1 + MAX_JUDGE_RETRIES):
+    if job.unjudged:
+        prev = job.unjudged
+        summary = Summary.model_validate(prev["summary"])
+        best = Attempt(prev["model"], summary, await _judge(state, ctx, repo, card_text, summary))
+        attempts = [a for a in prev.get("attempts", []) if a.get("verdict")] + [best.record()]
+        tried = {a["model"] for a in prev.get("attempts", [])}
+        if best.verdict is not None and not best.passed:
+            feedback = dec.judge_feedback(best.verdict)
+    rounds = 0 if best is not None and (best.verdict is None or best.passed) else 1 + MAX_JUDGE_RETRIES - len(attempts)
+    for _ in range(max(0, rounds)):
         generated = await _generate(state, ctx, repo, card_text, feedback, tried)
         if generated is None:
             break
         summary, model = generated
-        verdict = await _judge(state, ctx, repo, card_text, summary)
-        attempt = Attempt(model, summary, verdict)
-        attempts.append({"model": model, "verdict": verdict.model_dump() if verdict else None, "passed": bool(verdict and verdict.passed)})
+        attempt = Attempt(model, summary, await _judge(state, ctx, repo, card_text, summary))
+        attempts.append(attempt.record())
         best = _better(best, attempt)
-        if verdict is None or verdict.passed:
+        if attempt.verdict is None or attempt.passed:
             break
-        feedback = dec.judge_feedback(verdict)
+        feedback = dec.judge_feedback(attempt.verdict)
     if best is None:
-        state.failed_repos += 1
+        if state.stop is None:
+            state.failed_repos += 1
         return
     state.models[best.model] = state.models.get(best.model, 0) + 1
     if best.verdict:
         state.judged += 1
-        state.passed += best.verdict.passed
+        state.passed += best.passed
     ctx.db.put_artifact(
         "summary",
-        ctx.key(repo, SUMMARY_VERSION),
+        job.key,
         {
             "summary": best.summary.model_dump(mode="json"),
             "model": best.model,
             "provider": state.provider,
             "verdict": best.verdict.model_dump() if best.verdict else None,
-            "passed": bool(best.verdict and best.verdict.passed),
+            "passed": best.passed,
             "quality": best.verdict.quality if best.verdict else None,
             "attempts": attempts,
             "gated": job.gated,
@@ -205,44 +278,43 @@ async def run_summarize(ctx: Ctx, provider: Provider = "openrouter", reserve: in
     if provider == "local":
         pool, transport = local.build_pool()
     else:
-        pool, transport = await openrouter.build_pool(key)
-    state = RunState(provider, pool, transport, dec.Decider(key))
-
+        pool, transport = await openrouter.build_pool(key, exclude=ctx.db.disabled_models())
+    quota_start = await read_quota(key)
+    # Free requests are metered per request, so in-flight jobs, model hops and repair turns can't overshoot the
+    # reserve. /key's counter lags our own requests, so the run-start headroom is spent down locally too.
+    budget = RequestBudget(quota_start.headroom(reserve) if provider == "openrouter" else None)
+    state = RunState(provider, pool, transport, dec.Decider(key), budget=budget)
     jobs = pending_jobs(ctx)
 
     t0 = time.monotonic()
     done = 0
-    quota_start = await read_quota(key)
+    in_flight = asyncio.Semaphore(JOBS_IN_FLIGHT if provider == "openrouter" else local.CONCURRENCY * 2)
+
+    async def check_quota() -> None:
+        quota = await read_quota(key)
+        if quota.balance_usd <= openrouter.MIN_BALANCE_USD:
+            state.stop = f"credit balance ${quota.balance_usd:.2f} ≤ ${openrouter.MIN_BALANCE_USD:.2f}"
+        elif provider == "openrouter":
+            budget.cap(quota.headroom(reserve))
+
     try:
         with Progress(console=ctx.console, transient=True) as prog:
             task = prog.add_task(f"summarize ({provider})", total=len(jobs))
-            while done < len(jobs) and state.stop is None:
-                quota = await read_quota(key)
-                if quota.balance_usd <= openrouter.MIN_BALANCE_USD:
-                    state.stop = f"credit balance ${quota.balance_usd:.2f} ≤ ${openrouter.MIN_BALANCE_USD:.2f}"
-                    break
-                size = BATCH_SIZE
-                if provider == "openrouter":
-                    # /key's free counter lagged our own requests in testing, so also spend down the run-start
-                    # headroom by the requests this run has sent.
-                    headroom = min(quota.headroom(reserve), quota_start.headroom(reserve) - state.requests)
-                    if headroom <= 0:
-                        state.stop = f"free headroom exhausted (remaining {quota.free_remaining}, sent {state.requests}, reserve {reserve})"
-                        break
-                    size = max(1, min(BATCH_SIZE, headroom // WORST_CASE_REQUESTS_PER_REPO))
-                else:
-                    size = local.CONCURRENCY * 2
-                batch = jobs[done : done + size]
 
-                async def one(job: Job) -> None:
+            # A sliding window, not batches: a job stuck waiting for a model holds back only itself.
+            async def one(job: Job) -> None:
+                nonlocal done
+                async with in_flight:
+                    if state.stop is not None:
+                        return
                     await summarize_repo(state, ctx, job)
+                    done += 1
                     prog.advance(task)
+                    if done % QUOTA_CHECK_EVERY == 0:
+                        await check_quota()
 
-                try:
-                    await asyncio.gather(*(one(j) for j in batch))
-                except FatalProviderError as exc:
-                    state.stop = f"provider refused requests: {exc}"
-                done += len(batch)
+            await check_quota()
+            await asyncio.gather(*(one(j) for j in jobs))
         quota_end = await read_quota(key)
     finally:
         await transport.aclose()
@@ -257,6 +329,7 @@ async def run_summarize(ctx: Ctx, provider: Provider = "openrouter", reserve: in
         "passed": state.passed,
         "failed": state.failed_repos,
         "requests": state.requests,
+        "requests_unbilled": state.unbilled,
         "free_requests_used": quota_end.free_used - quota_start.free_used,
         "free_remaining": quota_end.free_remaining,
         "balance_usd": quota_end.balance_usd,

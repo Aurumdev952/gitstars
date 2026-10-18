@@ -59,3 +59,33 @@ def test_ctfidf_prefers_distinctive_shared_terms():
     assert out["a"][:2] == ["llm", "inference"]
     assert out["b"][:2] == ["react", "ui"]
     assert "cuda" not in out["a"], "a term in one member of a 4+ cluster lacks support"
+
+
+def test_top_neighbors_with_fewer_repos_than_k_never_lists_self():
+    v = np.eye(4, dtype=np.float32)
+    nb = top_neighbors(v, k=8)
+    assert [len(row) for row in nb] == [3, 3, 3, 3]
+    assert all(j != i and np.isfinite(c) for i, row in enumerate(nb) for j, c in row)
+    assert top_neighbors(v[:1], k=8) == [[]]
+
+
+def test_separate_galaxies_opens_gaps_without_reshaping_a_galaxy():
+    from gitstars.layout import separate_galaxies
+
+    rng = np.random.default_rng(0)
+    centres = np.array([[0, 0, 0], [3, 0, 0], [0, 3, 0], [3, 3, 3]], dtype=float)
+    galaxy = np.repeat(np.arange(4), 50)
+    pos = centres[galaxy] + rng.normal(scale=1.0, size=(200, 3))
+    out = separate_galaxies(pos, galaxy, gap=1.5, q=0.0)
+    cents = np.stack([out[galaxy == g].mean(0) for g in range(4)])
+    radii = np.array([np.linalg.norm(out[galaxy == g] - cents[g], axis=1).mean() for g in range(4)])
+    d = np.linalg.norm(cents[:, None] - cents[None], axis=2)
+    np.fill_diagonal(d, np.inf)
+    j = d.argmin(1)
+    assert np.isclose((d[np.arange(4), j] / (radii + radii[j])).min(), 1.5), "the tightest pair now has the target gap"
+    before = np.stack([pos[galaxy == g].mean(0) for g in range(4)])
+    assert np.allclose(cents, before), "centroids stay put"
+    m = galaxy == 0
+    a, b = pos[m] - pos[m].mean(0), out[m] - cents[0]
+    assert np.allclose(b, a * (np.linalg.norm(b) / np.linalg.norm(a))), "a galaxy is only scaled, never reshaped"
+    assert separate_galaxies(pos, np.zeros(200, dtype=int)) is pos

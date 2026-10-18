@@ -1,4 +1,4 @@
-"""SQLite store. Per-repo stage output is cached under (full_name, head_oid, stage_version)."""
+"""SQLite store. Per-repo stage output is cached under (stage, full_name), valid while its version and input digest match."""
 
 from __future__ import annotations
 
@@ -11,7 +11,7 @@ from typing import Any
 
 import numpy as np
 
-from gitstars.domain import CacheKey, Repo
+from gitstars.domain import CacheKey, Repo, sha
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS repos (
@@ -33,7 +33,7 @@ CREATE TABLE IF NOT EXISTS blobs (
 CREATE TABLE IF NOT EXISTS artifacts (
   stage TEXT NOT NULL,
   full_name TEXT NOT NULL,
-  head_oid TEXT NOT NULL,
+  digest TEXT NOT NULL,
   version INTEGER NOT NULL,
   payload TEXT NOT NULL,
   updated_at REAL NOT NULL,
@@ -66,7 +66,6 @@ CREATE TABLE IF NOT EXISTS llm_calls (
 CREATE TABLE IF NOT EXISTS embeddings (
   full_name TEXT NOT NULL,
   space TEXT NOT NULL,
-  head_oid TEXT NOT NULL,
   version INTEGER NOT NULL,
   text_sha TEXT NOT NULL,
   vec BLOB NOT NULL,
@@ -79,6 +78,8 @@ CREATE TABLE IF NOT EXISTS globals (
 );
 """
 
+DISABLED_MODEL_TTL_S = 7 * 86400
+
 
 class DB:
     def __init__(self, path: Path | str):
@@ -87,6 +88,7 @@ class DB:
         self.conn = sqlite3.connect(str(path))
         self.conn.execute("PRAGMA journal_mode=WAL")
         self.conn.execute("PRAGMA synchronous=NORMAL")
+        _migrate_digest_keys(self.conn)
         self.conn.executescript(SCHEMA)
 
     def close(self) -> None:
@@ -129,31 +131,19 @@ class DB:
         return dict(rows.fetchall())
 
     def get_artifact(self, stage: str, key: CacheKey) -> Any | None:
-        """The cached payload only when head_oid and stage version both match; otherwise a miss."""
+        """The cached payload only when stage version and input digest both match; otherwise a miss."""
         row = self.conn.execute(
-            "SELECT payload FROM artifacts WHERE stage = ? AND full_name = ? AND head_oid = ? AND version = ?",
-            (stage, key.full_name, key.head_oid, key.stage_version),
+            "SELECT payload FROM artifacts WHERE stage = ? AND full_name = ? AND digest = ? AND version = ?",
+            (stage, key.full_name, key.digest, key.stage_version),
         ).fetchone()
-        return json.loads(row[0]) if row else None
-
-    def latest_artifact(self, stage: str, full_name: str) -> Any | None:
-        row = self.conn.execute("SELECT payload FROM artifacts WHERE stage = ? AND full_name = ?", (stage, full_name)).fetchone()
         return json.loads(row[0]) if row else None
 
     def put_artifact(self, stage: str, key: CacheKey, payload: Any) -> None:
         with self.conn:
             self.conn.execute(
-                "INSERT OR REPLACE INTO artifacts (stage, full_name, head_oid, version, payload, updated_at) VALUES (?, ?, ?, ?, ?, ?)",
-                (stage, key.full_name, key.head_oid, key.stage_version, json.dumps(payload), time.time()),
+                "INSERT OR REPLACE INTO artifacts (stage, full_name, digest, version, payload, updated_at) VALUES (?, ?, ?, ?, ?, ?)",
+                (stage, key.full_name, key.digest, key.stage_version, json.dumps(payload), time.time()),
             )
-
-    def fresh_count(self, stage: str, version: int) -> int:
-        row = self.conn.execute(
-            "SELECT COUNT(*) FROM artifacts a JOIN repos r ON a.full_name = r.full_name"
-            " WHERE r.active = 1 AND a.stage = ? AND a.version = ? AND a.head_oid = r.head_oid",
-            (stage, version),
-        ).fetchone()
-        return row[0]
 
     def artifacts(self, stage: str) -> Iterator[tuple[str, Any]]:
         for name, payload in self.conn.execute("SELECT full_name, payload FROM artifacts WHERE stage = ?", (stage,)):
@@ -184,20 +174,33 @@ class DB:
                 (full_name, provider, model, outcome, latency_s, time.time()),
             )
 
-    def get_embedding(self, full_name: str, space: str) -> tuple[str, str, int, np.ndarray] | None:
+    def get_embedding(self, full_name: str, space: str) -> tuple[str, int, np.ndarray] | None:
+        """(text_sha, version, vector)."""
         row = self.conn.execute(
-            "SELECT head_oid, text_sha, version, vec FROM embeddings WHERE full_name = ? AND space = ?", (full_name, space)
+            "SELECT text_sha, version, vec FROM embeddings WHERE full_name = ? AND space = ?", (full_name, space)
         ).fetchone()
         if not row:
             return None
-        return row[0], row[1], row[2], np.frombuffer(row[3], dtype=np.float32)
+        return row[0], row[1], np.frombuffer(row[2], dtype=np.float32)
 
-    def put_embeddings(self, space: str, version: int, rows: Iterable[tuple[str, str, str, np.ndarray]]) -> None:
+    def embedding_shas(self, space: str) -> dict[str, tuple[str, int]]:
+        rows = self.conn.execute("SELECT full_name, text_sha, version FROM embeddings WHERE space = ?", (space,))
+        return {n: (t, v) for n, t, v in rows}
+
+    def embeddings_digest(self, names: list[str]) -> str:
+        """Digest of the texts and model version behind the `cluster` vectors, in `names` order; a layout is valid
+        while this holds."""
+        shas = self.embedding_shas("cluster")
+        return sha([list(shas[n]) for n in names])
+
+    def put_embeddings(self, version: int, spaces: dict[str, Iterable[tuple[str, str, np.ndarray]]]) -> None:
+        """Every space in one transaction: freshness is judged on `cluster`, so `search` must never lag it."""
         with self.conn:
-            self.conn.executemany(
-                "INSERT OR REPLACE INTO embeddings (full_name, space, head_oid, version, text_sha, vec) VALUES (?, ?, ?, ?, ?, ?)",
-                [(n, space, oid, version, sha, np.asarray(v, dtype=np.float32).tobytes()) for n, oid, sha, v in rows],
-            )
+            for space, rows in spaces.items():
+                self.conn.executemany(
+                    "INSERT OR REPLACE INTO embeddings (full_name, space, version, text_sha, vec) VALUES (?, ?, ?, ?, ?)",
+                    [(n, space, version, sha, np.asarray(v, dtype=np.float32).tobytes()) for n, sha, v in rows],
+                )
 
     def embedding_matrix(self, space: str, names: list[str]) -> np.ndarray:
         found = dict(
@@ -211,6 +214,17 @@ class DB:
             raise LookupError(f"{len(missing)} repos have no '{space}' embedding (first: {missing[0]}); run `gs embed`")
         return np.stack([np.frombuffer(found[n], dtype=np.float32) for n in names])
 
+    def disable_model(self, model: str, reason: str) -> None:
+        """Remember a model that refused us permanently (HTTP 403) so later runs leave it out of the pool."""
+        disabled = self.get_global("disabled_models") or {}
+        disabled[model] = {"reason": reason[:200], "at": time.time()}
+        self.put_global("disabled_models", disabled)
+
+    def disabled_models(self, max_age_s: float = DISABLED_MODEL_TTL_S) -> frozenset[str]:
+        """Expiring, because an upstream can lift a restriction; one probe request a week is cheap."""
+        now = time.time()
+        return frozenset(m for m, v in (self.get_global("disabled_models") or {}).items() if now - v["at"] < max_age_s)
+
     def get_global(self, name: str) -> Any | None:
         row = self.conn.execute("SELECT payload FROM globals WHERE name = ?", (name,)).fetchone()
         return json.loads(row[0]) if row else None
@@ -221,3 +235,24 @@ class DB:
                 "INSERT OR REPLACE INTO globals (name, payload, updated_at) VALUES (?, ?, ?)",
                 (name, json.dumps(payload), time.time()),
             )
+
+
+def _migrate_digest_keys(conn: sqlite3.Connection) -> None:
+    """Pre-digest stores keyed gate and summary rows on head_oid, so any push invalidated them. Re-key them on the
+    digest of what the stage read; those rows were all made by prompt version 1. Embeddings drop head_oid."""
+    if "head_oid" not in {r[1] for r in conn.execute("PRAGMA table_info(artifacts)")}:
+        return
+    conn.execute("BEGIN IMMEDIATE")
+    try:
+        conn.execute("ALTER TABLE artifacts RENAME COLUMN head_oid TO digest")
+        rows = conn.execute("SELECT stage, full_name, payload FROM artifacts WHERE stage IN ('gate', 'summary')").fetchall()
+        for stage, name, payload in rows:
+            input_sha = json.loads(payload)["input_sha"]
+            digest = sha([input_sha, 1]) if stage == "gate" else sha([input_sha, 1, 1])
+            conn.execute("UPDATE artifacts SET digest = ? WHERE stage = ? AND full_name = ?", (digest, stage, name))
+        if "head_oid" in {r[1] for r in conn.execute("PRAGMA table_info(embeddings)")}:
+            conn.execute("ALTER TABLE embeddings DROP COLUMN head_oid")
+    except BaseException:
+        conn.rollback()
+        raise
+    conn.commit()

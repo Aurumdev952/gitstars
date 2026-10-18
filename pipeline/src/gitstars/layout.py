@@ -7,10 +7,16 @@ from dataclasses import dataclass
 
 import numpy as np
 
-from gitstars.context import Ctx, sha
+from gitstars.context import Ctx
 from gitstars.naming import ctfidf_names, repo_terms
 
-LAYOUT_VERSION = 1
+LAYOUT_VERSION = 2
+# Galaxy label as a weak UMAP target pulls galaxies apart; 0.3 measured the same kNN recall as unsupervised.
+GALAXY_TARGET_WEIGHT = 0.3
+# Galaxies are then inflated about their centroids until, for 75% of them, the gap to the nearest other galaxy
+# centroid is at least 1.5x the sum of both mean radii. Supervised UMAP alone packs each galaxy into a dot.
+GALAXY_GAP = 1.5
+GALAXY_GAP_QUANTILE = 0.25
 SEED = 42
 NEIGHBORS = 8
 GALAXY_RANGE = (10, 16)
@@ -38,9 +44,12 @@ def normalize_positions(xyz: np.ndarray, extent: float = EXTENT) -> np.ndarray:
 
 def top_neighbors(vectors: np.ndarray, k: int = NEIGHBORS) -> list[list[tuple[int, float]]]:
     """Exact top-k cosine neighbours (vectors are unit-norm), self excluded, sorted desc."""
+    k = min(k, len(vectors) - 1)
+    if k <= 0:
+        return [[] for _ in vectors]
     sims = vectors @ vectors.T
     np.fill_diagonal(sims, -np.inf)
-    idx = np.argpartition(-sims, kth=min(k, len(vectors) - 1) - 1, axis=1)[:, :k]
+    idx = np.argpartition(-sims, kth=k - 1, axis=1)[:, :k]
     out = []
     for i, row in enumerate(idx):
         row = sorted(row, key=lambda j: -sims[i, j])
@@ -85,6 +94,43 @@ def galaxies_for(system: np.ndarray, vectors: np.ndarray) -> dict[int, int]:
     return best[1]
 
 
+def separate_galaxies(pos: np.ndarray, galaxy: np.ndarray, gap: float = GALAXY_GAP, q: float = GALAXY_GAP_QUANTILE) -> np.ndarray:
+    """Scale every galaxy about its own centroid by one shared factor, so the q-quantile of
+    (distance to nearest other centroid) / (sum of both mean radii) equals `gap`. Shapes inside a galaxy and the
+    centroid arrangement are unchanged."""
+    ids = sorted(set(galaxy.tolist()))
+    if len(ids) < 2:
+        return pos
+    masks = [galaxy == g for g in ids]
+    cents = np.stack([pos[m].mean(axis=0) for m in masks])
+    radii = np.array([np.linalg.norm(pos[m] - c, axis=1).mean() for m, c in zip(masks, cents)])
+    d = np.linalg.norm(cents[:, None] - cents[None], axis=2)
+    np.fill_diagonal(d, np.inf)
+    j = d.argmin(axis=1)
+    ratio = d[np.arange(len(ids)), j] / np.maximum(radii + radii[j], 1e-9)
+    factor = float(np.quantile(ratio, q)) / gap
+    out = pos.copy()
+    for m, c in zip(masks, cents):
+        out[m] = c + (pos[m] - c) * factor
+    return out
+
+
+def place(vectors: np.ndarray, galaxy: np.ndarray, dims: int) -> np.ndarray:
+    import umap
+
+    reducer = umap.UMAP(
+        n_components=dims,
+        metric="cosine",
+        n_neighbors=15,
+        min_dist=0.25,
+        spread=1.5,
+        random_state=SEED,
+        target_metric="categorical",
+        target_weight=GALAXY_TARGET_WEIGHT,
+    )
+    return normalize_positions(separate_galaxies(reducer.fit_transform(vectors, y=galaxy), galaxy))
+
+
 def compute(vectors: np.ndarray, names: list[str], min_cluster_size: int = 12, min_samples: int = 5) -> Layout:
     import umap
     from sklearn.cluster import HDBSCAN
@@ -93,15 +139,14 @@ def compute(vectors: np.ndarray, names: list[str], min_cluster_size: int = 12, m
     labels = HDBSCAN(min_cluster_size=min_cluster_size, min_samples=min_samples).fit_predict(reduced)
     system, outlier = attach_noise(labels, vectors)
     gal = galaxies_for(system, vectors)
-    xyz = umap.UMAP(n_components=3, metric="cosine", n_neighbors=15, min_dist=0.25, spread=1.5, random_state=SEED).fit_transform(vectors)
-    xy = umap.UMAP(n_components=2, metric="cosine", n_neighbors=15, min_dist=0.25, spread=1.5, random_state=SEED).fit_transform(vectors)
+    galaxy = np.array([gal[s] for s in system.tolist()])
     return Layout(
         names=names,
         system=system,
         galaxy_of_system=gal,
         outlier=outlier,
-        pos=normalize_positions(xyz),
-        pos2=normalize_positions(xy),
+        pos=place(vectors, galaxy, 3),
+        pos2=place(vectors, galaxy, 2),
         neighbors=top_neighbors(vectors),
     )
 
@@ -138,7 +183,7 @@ def run_layout(ctx: Ctx) -> dict:
     payload = {
         "version": LAYOUT_VERSION,
         "names": names,
-        "input_sha": sha([ctx.db.get_embedding(n, "cluster")[1] for n in names]),
+        "input_sha": ctx.db.embeddings_digest(names),
         "galaxy": galaxies,
         "system": systems,
         "outlier": layout.outlier.tolist(),

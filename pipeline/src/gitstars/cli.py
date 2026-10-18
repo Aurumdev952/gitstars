@@ -12,15 +12,16 @@ from rich.panel import Panel
 from rich.table import Table
 from rich.text import Text
 
-from gitstars.cards import load_card, load_gate
-from gitstars.config import Paths, openrouter_key
-from gitstars.context import Ctx, cache_key
+from gitstars.cards import gate_key, load_card, load_gate
+from gitstars.config import Paths, Provider, openrouter_key
+from gitstars.context import Ctx, commit_key
 from gitstars.db import DB
+from gitstars.embed import embed_freshness
 from gitstars.extract import assemble
 from gitstars.llm.openrouter import read_quota
-from gitstars.naming import cluster_name
+from gitstars.naming import NAME_RESERVE, cluster_name
 from gitstars.stages import STAGES
-from gitstars.summarize import SUMMARY_VERSION, Provider
+from gitstars.summarize import job_for, load_summary
 from gitstars.tokens import count_tokens
 
 app = typer.Typer(no_args_is_help=True, add_completion=False, help="gitstars pipeline: GitHub stars → galaxy export.")
@@ -86,10 +87,13 @@ def summarize(
     limit: Limit = None, force: Force = False, provider: ProviderOpt = "openrouter", reserve: Reserve = 100, repo: Only = None
 ) -> None:
     """Summarize on the model pool and judge each summary. Most-starred first; stops at the quota reserve."""
-    if provider not in ("openrouter", "local"):
+    _run("summarize", limit, force, repo, provider=_provider(provider), reserve=reserve)
+
+
+def _provider(value: str) -> Provider:
+    if value not in ("openrouter", "local"):
         raise typer.BadParameter("provider must be openrouter or local")
-    p: Provider = provider  # type: ignore[assignment]
-    _run("summarize", limit, force, repo, provider=p, reserve=reserve)
+    return value  # type: ignore[return-value]
 
 
 @app.command()
@@ -105,9 +109,9 @@ def layout(force: Force = False) -> None:
 
 
 @app.command()
-def name(limit: Limit = None, force: Force = False, reserve: Reserve = 100) -> None:
-    """LLM names for systems on the free pool; galaxies are named from their systems."""
-    _run("name", limit, force, reserve=reserve)
+def name(limit: Limit = None, force: Force = False, provider: ProviderOpt = "openrouter", reserve: Reserve = NAME_RESERVE) -> None:
+    """LLM names for every system, then every galaxy from its systems' names."""
+    _run("name", limit, force, provider=_provider(provider), reserve=reserve)
 
 
 @app.command()
@@ -126,7 +130,7 @@ def run(
     for stage in STAGES.values():
         if stage.uses_llm and not llm:
             continue
-        kwargs: dict[str, Any] = {"provider": provider} if stage.name == "summarize" else {}
+        kwargs: dict[str, Any] = {"provider": _provider(provider)} if stage.name in ("summarize", "name") else {}
         _run(stage.name, None if stage.name in ("layout", "export") else limit, False, **kwargs)
 
 
@@ -161,7 +165,7 @@ def show(repo: str) -> None:
         Text(f"gate: {('readme_quality=' + gate.readme_quality.value + ' model=' + gate.model) if gate else 'none (heuristic budget)'}")
     )
     console.print(Panel(Text(text), title=f"card sent to summarizer · {count_tokens(text)} tokens", title_align="left"))
-    s = ctx.db.get_artifact("summary", cache_key(r, SUMMARY_VERSION))
+    s = load_summary(ctx.db, r)
     if not s:
         console.print("[yellow]not summarized[/]")
         return
@@ -210,14 +214,25 @@ def status() -> None:
     ctx = _ctx()
     repos = ctx.db.repos()
     t = Table("stage", "version", "fresh", "of", title=f"data: {ctx.paths.data}", title_justify="left")
-    for st in STAGES.values():
-        if st.name in ("fetch",):
-            t.add_row(st.name, str(st.version), str(ctx.db.fresh_count("tree", st.version)), str(len(repos)))
-        elif st.name in ("card", "gate", "summarize"):
-            stage_key = "summary" if st.name == "summarize" else st.name
-            t.add_row(st.name, str(st.version), str(ctx.db.fresh_count(stage_key, st.version)), str(len(repos)))
-    n_emb = ctx.db.conn.execute("SELECT COUNT(*) FROM embeddings WHERE space='cluster'").fetchone()[0]
-    t.add_row("embed", str(STAGES["embed"].version), str(n_emb), str(len(repos)))
+    fresh = {"fetch": 0, "card": 0, "gate": 0, "summarize": 0}
+    for r in repos:
+        fresh["fetch"] += ctx.db.get_artifact("tree", commit_key(r, STAGES["fetch"].version)) is not None
+        loaded = load_card(ctx.db, r)
+        if loaded is None:
+            continue
+        fresh["card"] += 1
+        fresh["gate"] += ctx.db.get_artifact("gate", gate_key(r, loaded[1]["input_sha"])) is not None
+        job = job_for(ctx.db, r)
+        fresh["summarize"] += job is not None and ctx.db.get_artifact("summary", job.key) is not None
+    for stage, n in fresh.items():
+        t.add_row(stage, str(STAGES[stage].version), str(n), str(len(repos)))
+    ef = embed_freshness(ctx)
+    t.add_row(
+        "embed",
+        str(STAGES["embed"].version),
+        f"{ef['fresh_summary'] + ef['fresh_card']} ({ef['fresh_summary']} from summary, {ef['fresh_card']} from card)",
+        f"{len(repos)} · {ef['stale']} stale · {ef['missing']} missing",
+    )
     n_hp = ctx.db.conn.execute("SELECT COUNT(*), SUM(json_extract(payload,'$.doc') IS NOT NULL) FROM homepages").fetchone()
     t.add_row("homepage", str(STAGES["homepage"].version), f"{n_hp[1] or 0} ok", f"{n_hp[0]} urls")
     lay = ctx.db.get_global("layout")
@@ -231,6 +246,8 @@ def status() -> None:
             f"fetch: viewer {fs['viewer']} · starred {fs['total_starred']} · own dropped {fs['own_dropped']} · kept {fs['kept']}"
             f" · with README {fs['with_readme']} · with homepage {fs['with_homepage']}"
         )
+    for model, v in sorted((ctx.db.get_global("disabled_models") or {}).items()):
+        console.print(Text(f"disabled model: {model} ({v['reason'][:80]})"))
     calls = ctx.db.conn.execute("SELECT provider, SUM(outcome='ok'), COUNT(*) FROM llm_calls GROUP BY provider").fetchall()
     for prov, ok, total in calls:
         console.print(f"llm calls ({prov}): {ok} ok / {total} total")

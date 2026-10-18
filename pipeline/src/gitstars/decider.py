@@ -86,6 +86,10 @@ class DecisionError(RuntimeError):
     pass
 
 
+# Bump when the gate or judge question text changes; it is part of the cache digest of their results.
+GATE_PROMPT_VERSION = 1
+JUDGE_PROMPT_VERSION = 1
+
 GATED = [c for c in CandidateId if c is not CandidateId.manifest]
 # readme_quality on the 600-char preview called most rich READMEs "partial" (24 of the 30 most-starred).
 README_QUALITY_CHARS = 3000

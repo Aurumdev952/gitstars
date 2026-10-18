@@ -9,11 +9,11 @@ import numpy as np
 
 from gitstars.cards import load_card
 from gitstars.config import DOC_PREFIX, EMBED_MODEL, QUERY_PREFIX, SEARCH_DIMS
-from gitstars.context import Ctx, sha
-from gitstars.domain import Repo
+from gitstars.context import Ctx
+from gitstars.domain import Repo, sha
 from gitstars.extract import v0_text
 from gitstars.llm.schema import Summary
-from gitstars.summarize import SUMMARY_VERSION
+from gitstars.summarize import load_summary
 
 EMBED_VERSION = 1
 BATCH = 32
@@ -48,7 +48,7 @@ def summary_text(repo: Repo, s: Summary) -> str:
 
 def embedding_input(ctx: Ctx, repo: Repo) -> tuple[str, bool] | None:
     """(text, summarized). A fresh summary wins; otherwise the raw card (v0 mode)."""
-    summary = ctx.db.get_artifact("summary", ctx.key(repo, SUMMARY_VERSION))
+    summary = load_summary(ctx.db, repo)
     if summary:
         return summary_text(repo, Summary.model_validate(summary["summary"])), True
     loaded = load_card(ctx.db, repo)
@@ -85,8 +85,24 @@ def truncate(vectors: np.ndarray, dims: int = SEARCH_DIMS) -> np.ndarray:
     return v / np.linalg.norm(v, axis=1, keepdims=True).clip(min=1e-12)
 
 
+def embed_freshness(ctx: Ctx) -> dict[str, int]:
+    """Repos whose stored vectors were made from their current embedding text, split by summary vs v0 card."""
+    stored = ctx.db.embedding_shas("cluster")
+    out = {"fresh_summary": 0, "fresh_card": 0, "stale": 0, "missing": 0}
+    for repo in ctx.db.repos():
+        inp = embedding_input(ctx, repo)
+        have = stored.get(repo.full_name)
+        if inp is None or have is None:
+            out["missing"] += 1
+        elif have == (sha(inp[0]), EMBED_VERSION):
+            out["fresh_summary" if inp[1] else "fresh_card"] += 1
+        else:
+            out["stale"] += 1
+    return out
+
+
 def run_embed(ctx: Ctx) -> dict:
-    repos = ctx.db.repos(order="stars", limit=ctx.limit)
+    repos = ctx.db.repos(order="stars")
     pending: list[tuple[Repo, str, str]] = []
     summarized = 0
     for repo in repos:
@@ -97,8 +113,9 @@ def run_embed(ctx: Ctx) -> dict:
         summarized += is_summary
         text_sha = sha(text)
         stored = ctx.db.get_embedding(repo.full_name, "cluster")
-        if ctx.force or stored is None or stored[1] != text_sha or stored[2] != EMBED_VERSION or stored[0] != repo.head_oid:
+        if ctx.force or stored is None or stored[:2] != (text_sha, EMBED_VERSION):
             pending.append((repo, text, text_sha))
+    pending = ctx.take(pending)
 
     t0 = time.monotonic()
     model = load_model() if pending or ctx.db.get_global("probe_vectors") is None else None
@@ -111,8 +128,13 @@ def run_embed(ctx: Ctx) -> dict:
         # prompt="" so a model-level default prompt can't sneak in; the doc prefix is already in the text.
         search = encode(model, docs, prompt="")
         encode_s = time.monotonic() - t1
-        ctx.db.put_embeddings("cluster", EMBED_VERSION, [(r.full_name, r.head_oid, s, v) for (r, _, s), v in zip(pending, cluster)])
-        ctx.db.put_embeddings("search", EMBED_VERSION, [(r.full_name, r.head_oid, s, v) for (r, _, s), v in zip(pending, search)])
+        ctx.db.put_embeddings(
+            EMBED_VERSION,
+            {
+                "cluster": [(r.full_name, s, v) for (r, _, s), v in zip(pending, cluster)],
+                "search": [(r.full_name, s, v) for (r, _, s), v in zip(pending, search)],
+            },
+        )
     else:
         encode_s = 0.0
     if model is not None:

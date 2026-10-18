@@ -10,9 +10,9 @@ from rich.progress import Progress
 
 from gitstars import decider as dec
 from gitstars.config import github_token, openrouter_key
-from gitstars.context import Ctx, cache_key, sha
+from gitstars.context import Ctx, commit_key
 from gitstars.db import DB
-from gitstars.domain import Card, GateVerdict, HomepageDoc, ReadmeQuality, Repo, TreeEntry
+from gitstars.domain import CacheKey, Card, GateVerdict, HomepageDoc, ReadmeQuality, Repo, TreeEntry, sha
 from gitstars.extract import assemble, build_card, choose_blob_paths, symlink_target
 from gitstars.github import GitHub
 from gitstars.homepage import HomepageFetcher, normalize_url, worth_fetching
@@ -43,9 +43,7 @@ async def run_fetch(ctx: Ctx) -> dict:
         ctx.db.upsert_repos(kept)
         stars_s = time.monotonic() - t0
 
-        pending = [r for r in kept if r.head_oid and ctx.cached("tree", r, TREE_VERSION) is None]
-        if ctx.limit is not None:
-            pending = pending[: ctx.limit]
+        pending = ctx.take([r for r in kept if r.head_oid and ctx.cached("tree", commit_key(r, TREE_VERSION)) is None])
         trees: dict[str, list[TreeEntry]] = {}
         with Progress(console=ctx.console, transient=True) as prog:
             task = prog.add_task("trees", total=len(pending))
@@ -65,7 +63,7 @@ async def run_fetch(ctx: Ctx) -> dict:
                 ctx.db.put_blobs(r.full_name, r.head_oid, blobs[r.full_name])
             ctx.db.put_artifact(
                 "tree",
-                ctx.key(r, TREE_VERSION),
+                commit_key(r, TREE_VERSION),
                 {"entries": [e.model_dump() for e in trees[r.full_name]], "blobs": wanted[r.full_name][1]},
             )
         backfilled = await fill_missing_blobs(ctx, gh, kept)
@@ -98,7 +96,7 @@ async def fill_missing_blobs(ctx: Ctx, gh: GitHub, repos: list[Repo]) -> int:
     """Read blobs the current selection rules want but an earlier run never requested (rules change; trees don't)."""
     wanted: dict[str, tuple[str, list[str]]] = {}
     for r in repos:
-        tree_art = ctx.db.get_artifact("tree", ctx.key(r, TREE_VERSION))
+        tree_art = ctx.db.get_artifact("tree", commit_key(r, TREE_VERSION))
         if not tree_art:
             continue
         stored = ctx.db.blobs(r.full_name, r.head_oid)
@@ -146,9 +144,7 @@ def _has_readme(db: DB, r: Repo) -> bool:
 
 async def run_homepage(ctx: Ctx) -> dict:
     urls = sorted({u for r in ctx.db.repos() if worth_fetching(r.homepage) and (u := normalize_url(r.homepage))})
-    pending = [u for u in urls if ctx.force or _should_fetch(ctx.db.get_homepage(u, HOMEPAGE_VERSION))]
-    if ctx.limit is not None:
-        pending = pending[: ctx.limit]
+    pending = ctx.take([u for u in urls if ctx.force or _should_fetch(ctx.db.get_homepage(u, HOMEPAGE_VERSION))])
     fetcher = HomepageFetcher()
     ok = 0
     t0 = time.monotonic()
@@ -185,24 +181,31 @@ def homepage_doc(db: DB, repo: Repo) -> HomepageDoc | None:
     return HomepageDoc.model_validate(cached["doc"]) if cached and cached.get("doc") else None
 
 
-def make_card(db: DB, repo: Repo) -> Card:
-    tree_art = db.latest_artifact("tree", repo.full_name)
+def make_card(db: DB, repo: Repo) -> Card | None:
+    """None until the tree at the current commit is fetched, so a half-finished fetch can't yield a README-less card."""
+    tree_art = db.get_artifact("tree", commit_key(repo, TREE_VERSION))
+    if tree_art is None and repo.head_oid:
+        return None
     entries = [TreeEntry.model_validate(e) for e in tree_art["entries"]] if tree_art else []
     return build_card(repo, entries, db.blobs(repo.full_name, repo.head_oid), homepage_doc(db, repo))
 
 
 def run_card(ctx: Ctx) -> dict:
-    repos = ctx.db.repos(order="stars", limit=ctx.limit)
+    repos = ctx.db.repos(order="stars")
     tokens: list[int] = []
     changed = 0
     for repo in repos:
         card = make_card(ctx.db, repo)
+        if card is None:
+            continue
         card_sha = sha(card.model_dump(mode="json"))
-        cached = ctx.cached("card", repo, CARD_VERSION, input_sha=card_sha)
-        if cached is None:
+        cached = ctx.cached("card", commit_key(repo, CARD_VERSION))
+        if cached is None or cached["input_sha"] != card_sha:
+            if ctx.limit is not None and changed >= ctx.limit:
+                continue
             text = assemble(card, None, count_tokens)
             cached = {"card": card.model_dump(mode="json"), "text": text, "tokens": count_tokens(text), "input_sha": card_sha}
-            ctx.db.put_artifact("card", ctx.key(repo, CARD_VERSION), cached)
+            ctx.db.put_artifact("card", commit_key(repo, CARD_VERSION), cached)
             changed += 1
         tokens.append(cached["tokens"])
     return {
@@ -216,17 +219,32 @@ def run_card(ctx: Ctx) -> dict:
 
 
 def load_card(db: DB, repo: Repo) -> tuple[Card, dict] | None:
-    art = db.get_artifact("card", cache_key(repo, CARD_VERSION))
+    art = db.get_artifact("card", commit_key(repo, CARD_VERSION))
     if art is None:
         return None
     return Card.model_validate(art["card"]), art
 
 
+def gate_key(repo: Repo, card_sha: str) -> CacheKey:
+    """A gate verdict depends on the card's content and the questions, not on the commit it came from."""
+    return CacheKey(full_name=repo.full_name, stage_version=GATE_VERSION, digest=sha([card_sha, dec.GATE_PROMPT_VERSION]))
+
+
 def load_gate(db: DB, repo: Repo, card_sha: str) -> GateVerdict | None:
-    art = db.get_artifact("gate", cache_key(repo, GATE_VERSION))
-    if art is None or art.get("input_sha") != card_sha:
-        return None
-    return GateVerdict.model_validate(art["verdict"])
+    art = db.get_artifact("gate", gate_key(repo, card_sha))
+    return GateVerdict.model_validate(art["verdict"]) if art else None
+
+
+def pending_gate_jobs(ctx: Ctx) -> list[tuple[Repo, Card, str]]:
+    jobs: list[tuple[Repo, Card, str]] = []
+    for repo in ctx.selected("stars"):
+        loaded = load_card(ctx.db, repo)
+        if loaded is None:
+            continue
+        card, art = loaded
+        if ctx.cached("gate", gate_key(repo, art["input_sha"])) is None:
+            jobs.append((repo, card, art["input_sha"]))
+    return ctx.take(jobs)
 
 
 async def run_gate(ctx: Ctx) -> dict:
@@ -234,14 +252,7 @@ async def run_gate(ctx: Ctx) -> dict:
     quota = await read_quota(key)
     if quota.balance_usd <= MIN_BALANCE_USD:
         raise RuntimeError(f"credit balance ${quota.balance_usd:.2f} is at or below ${MIN_BALANCE_USD:.2f}; not gating")
-    jobs: list[tuple[Repo, Card, str]] = []
-    for repo in ctx.selected("stars")[: ctx.limit]:
-        loaded = load_card(ctx.db, repo)
-        if loaded is None:
-            continue
-        card, art = loaded
-        if ctx.cached("gate", repo, GATE_VERSION, input_sha=art["input_sha"]) is None:
-            jobs.append((repo, card, art["input_sha"]))
+    jobs = pending_gate_jobs(ctx)
 
     decider = dec.Decider(key)
     sem = asyncio.Semaphore(GATE_CONCURRENCY)
@@ -268,7 +279,7 @@ async def run_gate(ctx: Ctx) -> dict:
                 stats["input_tokens"] += resp.usage.input_tokens or 0
             stats["gated"] += 1
         quality_counts[verdict.readme_quality.value] = quality_counts.get(verdict.readme_quality.value, 0) + 1
-        ctx.db.put_artifact("gate", ctx.key(repo, GATE_VERSION), {"verdict": verdict.model_dump(mode="json"), "input_sha": card_sha})
+        ctx.db.put_artifact("gate", gate_key(repo, card_sha), {"verdict": verdict.model_dump(mode="json"), "input_sha": card_sha})
 
     try:
         await asyncio.gather(*(one(*j) for j in jobs))
