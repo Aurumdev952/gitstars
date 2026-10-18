@@ -13,12 +13,12 @@ import numpy as np
 from jsonschema import Draft202012Validator, FormatChecker
 
 from gitstars.config import BROWSER_EMBED_MODEL, DOC_PREFIX, EMBED_MODEL, QUERY_PREFIX, SEARCH_DIMS, VIEWER, main_checkout_root
-from gitstars.context import Ctx, cache_key, sha
+from gitstars.context import Ctx
 from gitstars.db import DB
-from gitstars.domain import Repo
+from gitstars.domain import Repo, sha
 from gitstars.embed import truncate
 from gitstars.naming import cluster_name
-from gitstars.summarize import SUMMARY_VERSION
+from gitstars.summarize import load_summary
 
 CLUSTER_RADIUS_PERCENTILE = 90
 PROBE_TOP = 10
@@ -63,14 +63,14 @@ def guess_kind(repo: Repo) -> str:
 
 
 def one_liner_for(db: DB, repo: Repo) -> str:
-    art = db.get_artifact("summary", cache_key(repo, SUMMARY_VERSION))
+    art = load_summary(db, repo)
     if art:
         return art["summary"]["one_liner"]
     return repo.description or repo.name
 
 
 def repo_record(db: DB, repo: Repo, i: int, layout: dict[str, Any]) -> dict[str, Any]:
-    art = db.get_artifact("summary", cache_key(repo, SUMMARY_VERSION))
+    art = load_summary(db, repo)
     s = art["summary"] if art else None
     return {
         "fullName": repo.full_name,
@@ -148,7 +148,7 @@ def build(db: DB, viewer: str) -> tuple[dict[str, Any], np.ndarray]:
     names = layout["names"]
     if set(names) != set(repos):
         raise RuntimeError(f"layout covers {len(names)} repos but {len(repos)} are starred; rerun `gs embed` and `gs layout`")
-    current = sha([db.get_embedding(n, "cluster")[1] for n in names])
+    current = db.embeddings_digest(names)
     if current != layout["input_sha"]:
         raise RuntimeError("embeddings changed since the last layout; rerun `gs layout`")
     ordered = [repos[n] for n in names]

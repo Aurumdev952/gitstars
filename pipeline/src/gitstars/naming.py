@@ -14,9 +14,9 @@ from pydantic import BaseModel, Field, ValidationError
 from sklearn.feature_extraction.text import ENGLISH_STOP_WORDS
 
 from gitstars.config import openrouter_key
-from gitstars.context import Ctx, cache_key, sha
+from gitstars.context import Ctx
 from gitstars.db import DB
-from gitstars.domain import Repo
+from gitstars.domain import Repo, sha
 from gitstars.llm import openrouter
 from gitstars.llm.openrouter import TransportError, read_quota
 from gitstars.llm.pool import PoolExhausted
@@ -86,9 +86,9 @@ def _words(text: str | None) -> list[str]:
 
 
 def repo_terms(db: DB, repo: Repo) -> set[str]:
-    from gitstars.summarize import SUMMARY_VERSION
+    from gitstars.summarize import load_summary
 
-    art = db.get_artifact("summary", cache_key(repo, SUMMARY_VERSION))
+    art = load_summary(db, repo)
     if art:
         s = art["summary"]
         terms = {t.lower() for t in s.get("tags", [])} | set(_words(s.get("domain")))

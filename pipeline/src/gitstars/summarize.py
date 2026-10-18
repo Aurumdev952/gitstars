@@ -14,13 +14,14 @@ from rich.progress import Progress
 from gitstars import decider as dec
 from gitstars.cards import load_card, load_gate
 from gitstars.config import openrouter_key
-from gitstars.context import Ctx, sha
-from gitstars.domain import JudgeVerdict, Repo
+from gitstars.context import Ctx
+from gitstars.db import DB
+from gitstars.domain import CacheKey, JudgeVerdict, Repo, sha
 from gitstars.extract import assemble
 from gitstars.llm import local, openrouter
 from gitstars.llm.openrouter import ChatTransport, FatalProviderError, TransportError, read_quota
 from gitstars.llm.pool import ModelSlot, Pool, PoolExhausted
-from gitstars.llm.prompts import SYSTEM, repair_prompt, user_prompt
+from gitstars.llm.prompts import PROMPT_VERSION, SYSTEM, repair_prompt, user_prompt
 from gitstars.llm.schema import SUMMARY_SCHEMA, Summary, parse_summary
 from gitstars.tokens import count_tokens
 
@@ -129,8 +130,8 @@ def _better(a: Attempt | None, b: Attempt) -> Attempt:
 
 @dataclass(frozen=True)
 class Job:
-    """One repo to summarize. Its cache digest is the exact text the model sees, so a new gate verdict or a
-    change to budget assembly re-summarizes it without a commit."""
+    """One repo to summarize. Its cache digest covers the exact text the model sees plus the prompt and judge
+    versions, so a new gate verdict or budget change re-summarizes it and a push that leaves the card alone doesn't."""
 
     repo: Repo
     card_text: str
@@ -140,19 +141,37 @@ class Job:
     def input_sha(self) -> str:
         return sha(self.card_text)
 
+    @property
+    def key(self) -> CacheKey:
+        return CacheKey(
+            full_name=self.repo.full_name,
+            stage_version=SUMMARY_VERSION,
+            digest=sha([self.input_sha, PROMPT_VERSION, dec.JUDGE_PROMPT_VERSION]),
+        )
+
+
+def job_for(db: DB, repo: Repo) -> Job | None:
+    loaded = load_card(db, repo)
+    if loaded is None:
+        return None
+    card, art = loaded
+    gate = load_gate(db, repo, art["input_sha"])
+    return Job(repo, assemble(card, gate, count_tokens), gate is not None)
+
+
+def load_summary(db: DB, repo: Repo) -> dict | None:
+    """The summary artifact made from the repo's current card text, or None."""
+    job = job_for(db, repo)
+    return db.get_artifact("summary", job.key) if job else None
+
 
 def pending_jobs(ctx: Ctx) -> list[Job]:
     jobs: list[Job] = []
     for repo in ctx.selected("stars"):
         if ctx.limit is not None and len(jobs) >= ctx.limit:
             break
-        loaded = load_card(ctx.db, repo)
-        if loaded is None:
-            continue
-        card, art = loaded
-        gate = load_gate(ctx.db, repo, art["input_sha"])
-        job = Job(repo, assemble(card, gate, count_tokens), gate is not None)
-        if ctx.cached("summary", repo, SUMMARY_VERSION, input_sha=job.input_sha) is None:
+        job = job_for(ctx.db, repo)
+        if job is not None and ctx.cached("summary", job.key) is None:
             jobs.append(job)
     return jobs
 
@@ -184,7 +203,7 @@ async def summarize_repo(state: RunState, ctx: Ctx, job: Job) -> None:
         state.passed += best.verdict.passed
     ctx.db.put_artifact(
         "summary",
-        ctx.key(repo, SUMMARY_VERSION),
+        job.key,
         {
             "summary": best.summary.model_dump(mode="json"),
             "model": best.model,

@@ -7,7 +7,7 @@ from dataclasses import dataclass
 
 import numpy as np
 
-from gitstars.context import Ctx, sha
+from gitstars.context import Ctx
 from gitstars.naming import ctfidf_names, repo_terms
 
 LAYOUT_VERSION = 1
@@ -138,7 +138,7 @@ def run_layout(ctx: Ctx) -> dict:
     payload = {
         "version": LAYOUT_VERSION,
         "names": names,
-        "input_sha": sha([ctx.db.get_embedding(n, "cluster")[1] for n in names]),
+        "input_sha": ctx.db.embeddings_digest(names),
         "galaxy": galaxies,
         "system": systems,
         "outlier": layout.outlier.tolist(),

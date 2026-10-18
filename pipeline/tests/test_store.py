@@ -1,16 +1,18 @@
 import json
+from pathlib import Path
 
 import numpy as np
 import pytest
 from rich.console import Console
 
+from gitstars.cards import run_card
 from gitstars.config import Paths
-from gitstars.context import Ctx, cache_key, sha
+from gitstars.context import Ctx, commit_key
 from gitstars.db import DB
-from gitstars.domain import CacheKey, Repo
+from gitstars.domain import CacheKey, Repo, sha
 from gitstars.export import ExportInvalid, build, validate
 from gitstars.llm.schema import Summary, parse_summary
-from gitstars.summarize import SUMMARY_VERSION
+from gitstars.summarize import job_for
 
 
 def repo(name: str, oid: str = "a1", stars: int = 10, starred: str = "2024-01-01T00:00:00Z") -> Repo:
@@ -39,19 +41,14 @@ def test_cache_key_reuse_and_invalidation(db, tmp_path):
     r = repo("o/a")
     db.upsert_repos([r])
     ctx = Ctx(paths=Paths(tmp_path, tmp_path), db=db, console=Console())
-    db.put_artifact("card", cache_key(r, 1), {"x": 1, "input_sha": "s1"})
-    assert ctx.cached("card", r, 1) == {"x": 1, "input_sha": "s1"}
-    assert ctx.cached("card", r, 1, input_sha="s1") is not None
-    assert ctx.cached("card", r, 1, input_sha="s2") is None, "same key, different input digest"
-    assert ctx.cached("card", r, 2) is None, "stage version bump"
+    db.put_artifact("card", commit_key(r, 1), {"x": 1})
+    assert ctx.cached("card", commit_key(r, 1)) == {"x": 1}
+    assert ctx.cached("card", commit_key(r, 2)) is None, "stage version bump"
     moved = r.model_copy(update={"head_oid": "b2"})
-    assert ctx.cached("card", moved, 1) is None, "default branch moved"
-    assert db.get_artifact("card", CacheKey(full_name="o/a", head_oid="a1", stage_version=1)) is not None
+    assert ctx.cached("card", commit_key(moved, 1)) is None, "default branch moved"
+    assert db.get_artifact("card", CacheKey(full_name="o/a", stage_version=1, digest="a1")) is not None
     ctx.force = True
-    assert ctx.cached("card", r, 1) is None
-    assert db.fresh_count("card", 1) == 1
-    db.upsert_repos([moved])
-    assert db.fresh_count("card", 1) == 0
+    assert ctx.cached("card", commit_key(r, 1)) is None
 
 
 def test_upsert_marks_unstarred_inactive(db):
@@ -80,8 +77,9 @@ def _seed_export(db: DB, n: int = 3) -> None:
     rng = np.random.default_rng(0)
     vecs = rng.normal(size=(n, 768)).astype(np.float32)
     vecs /= np.linalg.norm(vecs, axis=1, keepdims=True)
-    db.put_embeddings("cluster", 1, [(nm, "a1", f"t{i}", vecs[i]) for i, nm in enumerate(names)])
-    db.put_embeddings("search", 1, [(nm, "a1", f"t{i}", vecs[i]) for i, nm in enumerate(names)])
+    db.put_embeddings("cluster", 1, [(nm, f"t{i}", vecs[i]) for i, nm in enumerate(names)])
+    db.put_embeddings("search", 1, [(nm, f"t{i}", vecs[i]) for i, nm in enumerate(names)])
+    run_card(Ctx(paths=Paths(Path("."), Path(".")), db=db, console=Console()))
     summary = Summary(
         one_liner="Does r1 things",
         summary="r1 does specific things well.",
@@ -92,7 +90,7 @@ def _seed_export(db: DB, n: int = 3) -> None:
         audience=None,
         highlights=[],
     )
-    db.put_artifact("summary", cache_key(repos[1], SUMMARY_VERSION), {"summary": summary.model_dump(), "quality": 0.75})
+    db.put_artifact("summary", job_for(db, repos[1]).key, {"summary": summary.model_dump(), "quality": 0.75})
     db.put_global("probe_vectors", {"queries": ["q"], "vectors": vecs[:1, :256].tolist()})
     db.put_global(
         "layout",

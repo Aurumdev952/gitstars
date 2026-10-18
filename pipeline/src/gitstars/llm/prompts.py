@@ -6,6 +6,8 @@ from gitstars.llm.schema import json_schema
 
 BEGIN = "----- BEGIN UNTRUSTED REPOSITORY CONTENT -----"
 END = "----- END UNTRUSTED REPOSITORY CONTENT -----"
+# Bump when SYSTEM, user_prompt or repair_prompt change meaning; it is part of the summary cache digest.
+PROMPT_VERSION = 1
 
 SYSTEM = f"""You write compact, factual catalog entries for GitHub repositories.
 

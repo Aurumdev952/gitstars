@@ -1,0 +1,122 @@
+import json
+import sqlite3
+
+import pytest
+from rich.console import Console
+
+from gitstars import summarize
+from gitstars.cards import gate_key, load_card, pending_gate_jobs, run_card
+from gitstars.config import Paths
+from gitstars.context import Ctx
+from gitstars.db import DB
+from gitstars.domain import GateVerdict, ReadmeQuality, Repo, sha
+from gitstars.summarize import job_for, load_summary, pending_jobs
+
+VALID = json.dumps(
+    {
+        "one_liner": "A fast find",
+        "summary": "fd is a fast alternative to find.",
+        "kind": "cli",
+        "domain": None,
+        "tags": ["cli", "rust"],
+        "stack": ["Rust"],
+        "audience": None,
+        "highlights": [],
+    }
+)
+
+
+def repo(name: str, oid: str = "a1", stars: int = 10) -> Repo:
+    return Repo(
+        full_name=name,
+        owner=name.split("/")[0],
+        head_oid=oid,
+        url=f"https://github.com/{name}",
+        starred_at="2024-01-01T00:00:00Z",
+        stars=stars,
+        description=f"{name} does a specific thing",
+        topics=["cli"],
+        language="Rust",
+        languages=["Rust"],
+    )
+
+
+@pytest.fixture
+def ctx(tmp_path):
+    db = DB(tmp_path / "t.db")
+    yield Ctx(paths=Paths(tmp_path, tmp_path), db=db, console=Console(quiet=True))
+    db.close()
+
+
+def summarized(ctx: Ctx, r: Repo) -> None:
+    ctx.db.put_artifact("summary", job_for(ctx.db, r).key, {"summary": json.loads(VALID), "quality": 0.8})
+
+
+def test_push_that_keeps_the_card_keeps_gate_and_summary(ctx):
+    r = repo("o/a")
+    ctx.db.upsert_repos([r])
+    run_card(ctx)
+    card_sha = load_card(ctx.db, r)[1]["input_sha"]
+    gate = GateVerdict(keep={}, readme_quality=ReadmeQuality.missing, model="m")
+    ctx.db.put_artifact("gate", gate_key(r, card_sha), {"verdict": gate.model_dump(mode="json")})
+    summarized(ctx, r)
+
+    pushed = r.model_copy(update={"head_oid": "b2"})
+    ctx.db.upsert_repos([pushed])
+    run_card(ctx)
+    assert pending_gate_jobs(ctx) == [], "gate verdict survives a push that leaves the card alone"
+    assert load_summary(ctx.db, pushed) is not None, "summary survives a push that leaves the card alone"
+    assert pending_jobs(ctx) == []
+
+    edited = pushed.model_copy(update={"description": "now it does something else entirely"})
+    ctx.db.upsert_repos([edited])
+    run_card(ctx)
+    assert load_summary(ctx.db, edited) is None, "a changed card re-summarizes"
+    assert [j.repo.full_name for j in pending_jobs(ctx)] == ["o/a"]
+
+
+def test_prompt_version_is_part_of_the_summary_key(ctx, monkeypatch):
+    r = repo("o/a")
+    ctx.db.upsert_repos([r])
+    run_card(ctx)
+    summarized(ctx, r)
+    monkeypatch.setattr(summarize, "PROMPT_VERSION", 2)
+    assert load_summary(ctx.db, r) is None
+
+
+def test_legacy_head_oid_rows_are_rekeyed_on_their_digest(tmp_path):
+    path = tmp_path / "legacy.db"
+    conn = sqlite3.connect(path)
+    conn.executescript(
+        "CREATE TABLE artifacts (stage TEXT NOT NULL, full_name TEXT NOT NULL, head_oid TEXT NOT NULL, version INTEGER NOT NULL,"
+        " payload TEXT NOT NULL, updated_at REAL NOT NULL, PRIMARY KEY (stage, full_name));"
+        "CREATE TABLE embeddings (full_name TEXT NOT NULL, space TEXT NOT NULL, head_oid TEXT NOT NULL, version INTEGER NOT NULL,"
+        " text_sha TEXT NOT NULL, vec BLOB NOT NULL, PRIMARY KEY (full_name, space));"
+    )
+    conn.execute("INSERT INTO artifacts VALUES ('summary', 'o/a', 'oldhead', 1, ?, 0)", (json.dumps({"input_sha": "s1", "x": 1}),))
+    conn.execute("INSERT INTO artifacts VALUES ('gate', 'o/a', 'oldhead', 2, ?, 0)", (json.dumps({"input_sha": "c1"}),))
+    conn.execute("INSERT INTO artifacts VALUES ('tree', 'o/a', 'oldhead', 1, '{}', 0)")
+    conn.execute("INSERT INTO embeddings VALUES ('o/a', 'cluster', 'oldhead', 1, 't1', x'00000000')")
+    conn.commit()
+    conn.close()
+
+    db = DB(path)
+    rows = dict(db.conn.execute("SELECT stage, digest FROM artifacts").fetchall())
+    assert rows == {"summary": sha(["s1", 1, 1]), "gate": sha(["c1", 1]), "tree": "oldhead"}
+    assert db.embedding_shas("cluster") == {"o/a": ("t1", 1)}
+    db.close()
+    DB(path).close()
+
+
+def test_limit_counts_repos_that_need_work(ctx):
+    rs = [repo(f"o/r{i}", stars=100 - i) for i in range(5)]
+    ctx.db.upsert_repos(rs)
+    run_card(ctx)
+    for r in rs[:2]:
+        summarized(ctx, r)
+        card_sha = load_card(ctx.db, r)[1]["input_sha"]
+        gate = GateVerdict(keep={}, readme_quality=ReadmeQuality.missing, model="m")
+        ctx.db.put_artifact("gate", gate_key(r, card_sha), {"verdict": gate.model_dump(mode="json")})
+    ctx.limit = 2
+    assert [j.repo.full_name for j in pending_jobs(ctx)] == ["o/r2", "o/r3"]
+    assert [j[0].full_name for j in pending_gate_jobs(ctx)] == ["o/r2", "o/r3"]

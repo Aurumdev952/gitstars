@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
+import hashlib
+import json
 from enum import StrEnum
-from typing import ClassVar
+from typing import Any, ClassVar
 
 from pydantic import BaseModel, Field
 
@@ -33,10 +35,17 @@ class Repo(BaseModel):
         return self.full_name.split("/", 1)[1]
 
 
+def sha(obj: Any) -> str:
+    data = obj if isinstance(obj, str) else json.dumps(obj, sort_keys=True, default=str)
+    return hashlib.sha256(data.encode()).hexdigest()[:16]
+
+
 class CacheKey(BaseModel, frozen=True):
+    """A stage's output is reused while its version and the digest of everything it read are unchanged."""
+
     full_name: str
-    head_oid: str
     stage_version: int
+    digest: str
 
 
 class TreeEntry(BaseModel, frozen=True):
