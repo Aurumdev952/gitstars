@@ -2,6 +2,7 @@ import { GalaxyData, type Cluster, type Repo } from './schema'
 import { assignGalaxyHues, galaxyColor, systemColor, type ClusterColor } from './palette'
 import type { LayoutAttributes } from './layout'
 import { introDelay } from './intro'
+import { toStarredRange } from './timeline'
 
 export type ClusterNode = Cluster & {
   /** Position in `galaxies` or `systems`. */
@@ -136,8 +137,7 @@ export function buildGalaxyIndex(data: GalaxyData, vectorsUrl = ''): GalaxyIndex
   const starred = new Float32Array(n)
   const meta = new Float32Array(n * 4)
 
-  const [t0, t1] = data.meta.starredRange.map(Date.parse) as [number, number]
-  const span = Math.max(DAY, t1 - t0)
+  const { t0, span } = toStarredRange(data.meta.starredRange)
   const now = Date.parse(data.meta.generatedAt)
   const maxLogStars = Math.log10(1 + Math.max(1, ...repos.map((r) => r.stars)))
   const spikeThreshold = Math.max(5_000, quantile(repos.map((r) => r.stars), 0.98))
