@@ -3,14 +3,19 @@ import { assignGalaxyHues, galaxyColor, systemColor, type ClusterColor } from '.
 import type { LayoutAttributes } from './layout'
 import { introDelay } from './intro'
 import { toStarredRange } from './timeline'
+import { densityPeak, type Vec3 } from './labelLayout'
 
 export type ClusterNode = Cluster & {
   /** Position in `galaxies` or `systems`. */
   index: number
   color: ClusterColor
-  /** Mean of the members' flat-map positions (z = 0), where the label sits in flat view. */
-  centroid2: [number, number, number]
+  /** Where the name label pins: the members' density peak in 3D, and on the flat map (z = 0). */
+  anchor: Vec3
+  anchor2: Vec3
 }
+
+/** Mean-shift kernel width as a share of the cluster radius: wide enough to ignore clumps of a few stars. */
+const ANCHOR_BANDWIDTH = 0.45
 
 export type StarAttributes = LayoutAttributes & {
   seed: Float32Array
@@ -99,17 +104,25 @@ export function buildGalaxyIndex(data: GalaxyData, vectorsUrl = ''): GalaxyIndex
   const n = repos.length
   const galaxyClusters = data.clusters.filter((c) => c.level === 0).sort((a, b) => a.id.localeCompare(b.id))
   const hues = assignGalaxyHues(galaxyClusters.map((c) => c.centroid))
-  const centroid2 = (c: Cluster): [number, number, number] => {
+  const pos = new Float32Array(repos.flatMap((r) => r.pos))
+  const pos2 = new Float32Array(repos.flatMap((r) => [r.pos2[0], r.pos2[1], 0]))
+  const anchors = (c: Cluster) => {
     let x = 0
     let y = 0
     for (const m of c.members) {
-      x += repos[m]!.pos2[0]
-      y += repos[m]!.pos2[1]
+      x += pos2[m * 3]!
+      y += pos2[m * 3 + 1]!
     }
     const k = Math.max(1, c.members.length)
-    return [x / k, y / k, 0]
+    const flatMean: Vec3 = [x / k, y / k, 0]
+    let spread = 0
+    for (const m of c.members) spread += Math.hypot(pos2[m * 3]! - flatMean[0], pos2[m * 3 + 1]! - flatMean[1])
+    return {
+      anchor: densityPeak(pos, c.members, c.centroid, ANCHOR_BANDWIDTH * Math.max(c.radius, 1e-3)),
+      anchor2: densityPeak(pos2, c.members, flatMean, ANCHOR_BANDWIDTH * Math.max(spread / k, 1e-3)),
+    }
   }
-  const galaxies: ClusterNode[] = galaxyClusters.map((c, index) => ({ ...c, index, color: galaxyColor(hues[index]!), centroid2: centroid2(c) }))
+  const galaxies: ClusterNode[] = galaxyClusters.map((c, index) => ({ ...c, index, color: galaxyColor(hues[index]!), ...anchors(c) }))
   const galaxyById = new Map(galaxies.map((g) => [g.id, g]))
 
   const systemClusters = data.clusters.filter((c) => c.level === 1).sort((a, b) => a.id.localeCompare(b.id))
@@ -118,7 +131,7 @@ export function buildGalaxyIndex(data: GalaxyData, vectorsUrl = ''): GalaxyIndex
   const systems: ClusterNode[] = systemClusters.map((c, index) => {
     const siblings = siblingsOf.get(c.parentId ?? '')!
     const parent = galaxyById.get(c.parentId ?? '')!
-    return { ...c, index, color: systemColor(parent.color.hue, siblings.indexOf(c), siblings.length), centroid2: centroid2(c) }
+    return { ...c, index, color: systemColor(parent.color.hue, siblings.indexOf(c), siblings.length), ...anchors(c) }
   })
   const clusterById = new Map<string, ClusterNode>([...galaxies, ...systems].map((c) => [c.id, c]))
 
@@ -126,8 +139,6 @@ export function buildGalaxyIndex(data: GalaxyData, vectorsUrl = ''): GalaxyIndex
   const systemOf = new Uint16Array(n)
   const byFullName = new Map<string, number>()
 
-  const pos = new Float32Array(n * 3)
-  const pos2 = new Float32Array(n * 3)
   const color = new Float32Array(n * 3)
   const size = new Float32Array(n)
   const bright = new Float32Array(n)
@@ -149,8 +160,6 @@ export function buildGalaxyIndex(data: GalaxyData, vectorsUrl = ''): GalaxyIndex
     systemOf[i] = sys.index
     const c = sys.color.star
 
-    pos.set(r.pos, i * 3)
-    pos2.set([r.pos2[0], r.pos2[1], 0], i * 3)
     color.set(r.archived ? desaturate(c, 0.75) : c, i * 3)
     size[i] = Math.log10(1 + r.stars) / maxLogStars
     const s = (Date.parse(r.starredAt) - t0) / span

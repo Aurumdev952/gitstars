@@ -5,7 +5,7 @@ import { Color, LinearSRGBColorSpace, Vector3, type Group, type PerspectiveCamer
 import type { ClusterNode, GalaxyIndex } from '#/lib/load'
 import { sceneTheme } from '#/lib/theme'
 import { labelReveal } from '#/lib/intro'
-import { Occupancy, clusterSlots, hysteresis, place, starSlots, type LabelBox, type Rect, type Slot } from '#/lib/labelLayout'
+import { Occupancy, balancedSplit, hysteresis, insetSlots, place, starSlots, type LabelBox, type Rect, type Slot } from '#/lib/labelLayout'
 import { bornAt, positionAt, starPixelRadius, type StarSizeUniforms } from '#/lib/layout'
 import { projectPoint, type Projector, type ScreenPoint } from '#/lib/picking'
 import { useGalaxyStore } from '#/state/store'
@@ -16,6 +16,10 @@ const CHARACTERS = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz01234567
 const RETICLE = 24
 const FADE_RATE = 10
 const SYSTEM = { maxShown: 25, onPx: 130, offPx: 105 }
+/** Names longer than this many characters wrap onto two balanced lines. */
+const WRAP = { galaxy: 20, system: 26 }
+/** Pixels a cluster label may sit from its anchor before it hides instead. */
+const MAX_DRIFT = 12
 const REPO = { autoCount: 24, moreCount: 40, minPx: 7, reselectMs: 100, candidates: 80 }
 
 type TextLike = {
@@ -66,7 +70,7 @@ const up = new Vector3()
 const right = new Vector3()
 const rect: Rect = { x0: 0, y0: 0, x1: 0, y1: 0 }
 const repoSlots: Slot[] = starSlots(0, 0, 0)
-const labelSlots: Slot[] = clusterSlots(0, 0)
+const labelSlots: Slot[] = insetSlots(0, 0)
 const box: LabelBox = { x: 0, y: 0, w: 0, h: 0, slots: repoSlots, prev: null, pad: 0 }
 const dims = { w: 0, h: 0 }
 const sizes: StarSizeUniforms = { sizeScale: 1, minPx: 1, maxPx: 1 }
@@ -83,7 +87,7 @@ function inkTint([r, g, b]: readonly number[], white: number) {
 function makeLabels(nodes: ClusterNode[], macro: boolean): ClusterLabel[] {
   return nodes.map((node, k) => ({
     node,
-    text: macro ? node.name.toUpperCase() : node.name,
+    text: macro ? balancedSplit(node.name.toUpperCase(), WRAP.galaxy) : balancedSplit(node.name, WRAP.system),
     color: inkTint(node.color.linear, macro ? 0.62 : 0.45),
     px: macro ? sceneTheme.label.macroPx : sceneTheme.label.systemPx,
     slot: null,
@@ -200,6 +204,7 @@ export function Labels({ galaxy }: { galaxy: GalaxyIndex }) {
       box.slots = starSlots(w, 16, Math.min(r, 18), repoSlots)
       box.prev = repoState.placed.get(i) ?? null
       box.pad = 2
+      box.maxDrift = undefined
       const slot = place(o, box, 4)
       if (slot !== null) repoPlaced.set(i, slot)
     }
@@ -290,7 +295,7 @@ export function Labels({ galaxy }: { galaxy: GalaxyIndex }) {
       const depth = Math.max(1, -viewPos.copy(anchor).applyMatrix4(cam.matrixWorldInverse).z)
       const unit = depth * worldPerPx
       const { w, h } = measure(l, text)
-      const [dx, dy] = clusterSlots(w, h, labelSlots)[l.slot]!
+      const [dx, dy] = insetSlots(w, h, labelSlots)[l.slot]!
       // Slot offsets are top-left in screen pixels; the text is anchored at its centre.
       const cx = dx + w / 2
       const cy = dy + h / 2
@@ -307,7 +312,9 @@ export function Labels({ galaxy }: { galaxy: GalaxyIndex }) {
         font={LABEL_FONT}
         characters={CHARACTERS}
         fontSize={1}
-        letterSpacing={macroTier ? 0.2 : 0.02}
+        letterSpacing={macroTier ? 0.14 : 0.02}
+        textAlign="center"
+        lineHeight={1.2}
         anchorX="center"
         anchorY="middle"
         color={l.color}
@@ -316,7 +323,7 @@ export function Labels({ galaxy }: { galaxy: GalaxyIndex }) {
         outlineBlur="40%"
         fillOpacity={0}
         outlineOpacity={0}
-        renderOrder={macroTier ? 21 : 20}
+        renderOrder={macroTier ? sceneTheme.label.galaxyOrder : sceneTheme.label.galaxyOrder - 1}
       >
         {l.text}
       </Text>
@@ -333,18 +340,19 @@ export function Labels({ galaxy }: { galaxy: GalaxyIndex }) {
 
 function clusterAnchor(c: ClusterNode, flat: number, out: Vector3) {
   return out.set(
-    c.centroid[0] + (c.centroid2[0] - c.centroid[0]) * flat,
-    c.centroid[1] + (c.centroid2[1] - c.centroid[1]) * flat,
-    c.centroid[2] + (c.centroid2[2] - c.centroid[2]) * flat,
+    c.anchor[0] + (c.anchor2[0] - c.anchor[0]) * flat,
+    c.anchor[1] + (c.anchor2[1] - c.anchor[1]) * flat,
+    c.anchor[2] + (c.anchor2[2] - c.anchor[2]) * flat,
   )
 }
 
 /** Screen box of a cluster label, with a little side padding so neighbours never touch. */
 function measure(l: ClusterLabel, text: TextLike | undefined) {
   const b = text?.textRenderInfo?.blockBounds
-  const w = b ? (b[2] - b[0]) * l.px : l.text.length * l.px * (l.node.level === 0 ? 0.86 : 0.56)
+  const lines = l.text.includes('\n') ? 2 : 1
+  const w = b ? (b[2] - b[0]) * l.px : (l.text.length / lines) * l.px * (l.node.level === 0 ? 0.86 : 0.56)
   dims.w = w + 12
-  dims.h = l.px * 1.35
+  dims.h = (b ? b[3] - b[1] : 1.2 * lines) * l.px + l.px * 0.35
   return dims
 }
 
@@ -360,9 +368,10 @@ function placeCluster(l: ClusterLabel, text: TextLike | undefined, occ: Occupanc
   box.y = p.y
   box.w = w
   box.h = h
-  box.slots = clusterSlots(w, h, labelSlots)
+  box.slots = insetSlots(w, h, labelSlots)
   box.prev = l.slot
   box.pad = 0
+  box.maxDrift = MAX_DRIFT
   const slot = place(occ, box)
   l.slot = slot
   return slot !== null

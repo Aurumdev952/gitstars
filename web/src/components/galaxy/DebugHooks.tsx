@@ -1,12 +1,13 @@
 import { useEffect, useRef } from 'react'
 import { useFrame, useThree } from '@react-three/fiber'
-import type { Scene } from 'three'
+import { Vector3, type Object3D, type Scene } from 'three'
 import { useGalaxyStore } from '#/state/store'
 import { director } from './Director'
 import { pickAt } from './PointerPicker'
 import { sceneBus, starScreenPosition } from './sceneBus'
 import { probeSearch, timeQuery } from '#/workers/searchClient'
 import { timeline } from '#/state/timeline'
+import { sceneTheme } from '#/lib/theme'
 
 type DebugApi = {
   ready: boolean
@@ -23,6 +24,11 @@ type DebugApi = {
   /** Renders continuously for `ms` and returns the measured frame rate. */
   measureFps(ms?: number): Promise<{ fps: number; frames: number; drawCalls: number }>
   /** overlap@10 of the browser model against meta.searchProbes. */
+  /**
+   * Every visible cluster label with its screen rect and how well it reads as its own cluster's:
+   * `share` is the fraction of stars under the rect (16 px apron) that belong to that cluster.
+   */
+  labels(): LabelReport[]
   probe: typeof probeSearch
   timeQuery: typeof timeQuery
   store: typeof useGalaxyStore
@@ -32,10 +38,62 @@ type DebugApi = {
   scene: Scene
 }
 
+type LabelReport = {
+  name: string
+  tier: 'galaxy' | 'system'
+  rect: { x0: number; y0: number; x1: number; y1: number }
+  share: number
+  /** The cluster owning most stars under the rect; null when none are. */
+  owner: string | null
+}
+
 declare global {
   interface Window {
     __gitstars?: DebugApi
   }
+}
+
+type TroikaText = Object3D & { text?: string; fillOpacity?: number; textRenderInfo?: { blockBounds: [number, number, number, number] } | null }
+
+function labelReport(canvas: DOMRect): LabelReport[] {
+  const g = useGalaxyStore.getState().galaxy
+  const cam = sceneBus.camera
+  if (!g || !cam || !sceneBus.overlay) return []
+  const key = (t: string) => t.replace(/\n/g, ' ').toUpperCase()
+  const byName = { galaxy: new Map(g.galaxies.map((c) => [key(c.name), c])), system: new Map(g.systems.map((c) => [key(c.name), c])) }
+  const stars: { x: number; y: number; galaxy: number; system: number }[] = []
+  for (let i = 0; i < g.n; i++) {
+    const p = starScreenPosition(g, i)
+    if (p) stars.push({ x: p.x, y: p.y, galaxy: g.galaxyOf[i]!, system: g.systemOf[i]! })
+  }
+  const toScreen = (o: Object3D, x: number, y: number) => {
+    const v = o.localToWorld(new Vector3(x, y, 0)).project(cam)
+    return [((v.x + 1) / 2) * canvas.width, ((1 - v.y) / 2) * canvas.height] as const
+  }
+  const out: LabelReport[] = []
+  sceneBus.overlay.traverse((o: TroikaText) => {
+    const b = o.textRenderInfo?.blockBounds
+    if (typeof o.text !== 'string' || !b || !o.parent?.visible || (o.fillOpacity ?? 0) < 0.05) return
+    const tier = o.renderOrder === sceneTheme.label.galaxyOrder ? 'galaxy' : 'system'
+    const node = byName[tier].get(key(o.text))
+    if (!node) return
+    const [ax, ay] = toScreen(o, b[0], b[1])
+    const [bx, by] = toScreen(o, b[2], b[3])
+    const rect = { x0: Math.min(ax, bx), y0: Math.min(ay, by), x1: Math.max(ax, bx), y1: Math.max(ay, by) }
+    const counts = new Map<number, number>()
+    let total = 0
+    for (const s of stars) {
+      if (Math.hypot(Math.max(rect.x0 - s.x, 0, s.x - rect.x1), Math.max(rect.y0 - s.y, 0, s.y - rect.y1)) > 16) continue
+      const id = tier === 'galaxy' ? s.galaxy : s.system
+      counts.set(id, (counts.get(id) ?? 0) + 1)
+      total++
+    }
+    let owner: number | null = null
+    for (const [id, n] of counts) if (owner === null || n > counts.get(owner)!) owner = id
+    const list = tier === 'galaxy' ? g.galaxies : g.systems
+    out.push({ name: node.name, tier, rect, share: total ? (counts.get(node.index) ?? 0) / total : 0, owner: owner === null ? null : list[owner]!.name })
+  })
+  return out
 }
 
 /** Installs window.__gitstars; mounted inside the Canvas only when ?debug is set. */
@@ -89,6 +147,7 @@ export function DebugHooks() {
         const n = frames.current.count - startCount
         return { fps: (n * 1000) / (performance.now() - start), frames: n, drawCalls: api.drawCalls }
       },
+      labels: () => labelReport(gl.domElement.getBoundingClientRect()),
       probe: probeSearch,
       timeQuery,
       store: useGalaxyStore,

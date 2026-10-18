@@ -16,6 +16,15 @@ describe('buildGalaxyIndex', () => {
     expect(g.byFullName.get(r.fullName.toLowerCase())).toBe(42)
   })
 
+  it('pins every galaxy label on its own stars, in 3D and on the flat map', () => {
+    const near = (c: (typeof g.galaxies)[number], p: readonly number[], pos: (r: GalaxyData['repos'][number]) => readonly number[]) =>
+      Math.min(...c.members.map((m) => Math.hypot(...pos(fixture.repos[m]!).map((v, k) => v - (p[k] ?? 0)))))
+    for (const c of g.galaxies) {
+      expect(near(c, c.anchor, (r) => r.pos)).toBeLessThan(0.25 * c.radius)
+      expect(near(c, c.anchor2, (r) => [r.pos2[0], r.pos2[1], 0])).toBeLessThan(0.25 * c.radius)
+    }
+  })
+
   it('maps each repo to its galaxy and system nodes', () => {
     fixture.repos.forEach((r, i) => {
       expect(g.galaxies[g.galaxyOf[i]!]!.id).toBe(r.galaxyId)
