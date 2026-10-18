@@ -29,6 +29,8 @@ MAX_JUDGE_RETRIES = 2
 # Free upstreams 429 often (22 of 66 requests in the first 30-repo run); a 429 is cheap, so hop further.
 MAX_MODEL_HOPS = 6
 JOBS_IN_FLIGHT = 30
+# The decider sees every job's judge call; local runs keep 128 jobs in flight.
+JUDGE_CONCURRENCY = 16
 QUOTA_CHECK_EVERY = 25
 # A job that finds no untried model with capacity for this long is left for a later run.
 MODEL_WAIT_S = 600.0
@@ -63,6 +65,7 @@ class RunState:
     judge_cost: float = 0.0
     models: dict[str, int] = field(default_factory=dict)
     stop: str | None = None
+    judge_slots: asyncio.Semaphore = field(default_factory=lambda: asyncio.Semaphore(JUDGE_CONCURRENCY))
 
 
 async def _generate(
@@ -138,7 +141,8 @@ async def _judge(state: RunState, ctx: Ctx, repo: Repo, card_text: str, summary:
     req = dec.judge_request(card_text, summary)
     for attempt in range(2):
         try:
-            resp, raw = await state.decider.decide(req)
+            async with state.judge_slots:
+                resp, raw = await state.decider.decide(req)
             verdict = dec.parse_judge(resp)
         except (dec.DecisionError, ValueError) as exc:
             ctx.db.log_decision(repo.full_name, "judge", req.model_dump(mode="json"), None, str(exc)[:500])
