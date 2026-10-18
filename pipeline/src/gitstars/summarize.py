@@ -21,7 +21,7 @@ from gitstars.llm import local, openrouter
 from gitstars.llm.openrouter import ChatTransport, FatalProviderError, TransportError, read_quota
 from gitstars.llm.pool import ModelSlot, Pool, PoolExhausted
 from gitstars.llm.prompts import SYSTEM, repair_prompt, user_prompt
-from gitstars.llm.schema import Summary, parse_summary
+from gitstars.llm.schema import SUMMARY_SCHEMA, Summary, parse_summary
 from gitstars.tokens import count_tokens
 
 SUMMARY_VERSION = 1
@@ -83,7 +83,7 @@ async def _generate(state: RunState, ctx: Ctx, repo: Repo, card_text: str, feedb
 
 async def _complete_and_parse(state: RunState, slot: ModelSlot, messages: list[dict[str, str]]) -> Summary:
     state.requests += 1
-    raw = await state.transport.complete(slot, messages)
+    raw = await state.transport.complete(slot, messages, SUMMARY_SCHEMA)
     try:
         return parse_summary(raw)
     except json.JSONDecodeError as exc:
@@ -93,7 +93,9 @@ async def _complete_and_parse(state: RunState, slot: ModelSlot, messages: list[d
         slot.starts.append(state.pool.clock.now())
         state.requests += 1
         repaired = await state.transport.complete(
-            slot, [*messages, {"role": "assistant", "content": raw}, {"role": "user", "content": repair_prompt(str(exc))}]
+            slot,
+            [*messages, {"role": "assistant", "content": raw}, {"role": "user", "content": repair_prompt(str(exc))}],
+            SUMMARY_SCHEMA,
         )
         try:
             return parse_summary(repaired)

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import re
+from dataclasses import dataclass
 from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
@@ -67,6 +68,14 @@ class Summary(BaseModel):
         return [s.strip() for s in v if s.strip()][:3]
 
 
+@dataclass(frozen=True)
+class OutputSchema:
+    """What a structured-output request asks the model for (sent as response_format json_schema, strict)."""
+
+    name: str
+    schema: dict[str, Any]
+
+
 def json_schema() -> dict[str, Any]:
     """Strict-mode JSON schema: every property required, nullable fields typed as unions with null."""
     kinds = list(Kind.__args__)
@@ -88,6 +97,8 @@ def json_schema() -> dict[str, Any]:
         },
     }
 
+
+SUMMARY_SCHEMA = OutputSchema("repo_summary", json_schema())
 
 _FENCED = re.compile(r"```(?:json)?\s*(\{.*\})\s*```", re.S)
 

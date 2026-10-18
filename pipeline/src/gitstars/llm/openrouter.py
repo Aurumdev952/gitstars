@@ -10,7 +10,7 @@ import httpx
 
 from gitstars.config import OPENROUTER_API
 from gitstars.llm.pool import ModelSlot, Pool, eligible, endpoint_healthy, rank
-from gitstars.llm.schema import json_schema
+from gitstars.llm.schema import OutputSchema
 
 MAX_IN_FLIGHT = 15
 PER_MODEL_RPM = 18
@@ -47,7 +47,7 @@ class ChatTransport:
     async def aclose(self) -> None:
         await self.client.aclose()
 
-    def body(self, slot: ModelSlot, messages: list[dict[str, str]]) -> dict[str, Any]:
+    def body(self, slot: ModelSlot, messages: list[dict[str, str]], schema: OutputSchema) -> dict[str, Any]:
         body: dict[str, Any] = {
             "model": slot.id,
             "messages": messages,
@@ -58,7 +58,7 @@ class ChatTransport:
         if slot.structured:
             body["response_format"] = {
                 "type": "json_schema",
-                "json_schema": {"name": "repo_summary", "strict": True, "schema": json_schema()},
+                "json_schema": {"name": schema.name, "strict": True, "schema": schema.schema},
             }
         if slot.reasoning:
             body["reasoning"] = slot.reasoning
@@ -66,9 +66,9 @@ class ChatTransport:
             body.update(self.extra_body)
         return body
 
-    async def complete(self, slot: ModelSlot, messages: list[dict[str, str]]) -> str:
+    async def complete(self, slot: ModelSlot, messages: list[dict[str, str]], schema: OutputSchema) -> str:
         try:
-            resp = await self.client.post(f"{self.base_url}/chat/completions", headers=self.headers, json=self.body(slot, messages))
+            resp = await self.client.post(f"{self.base_url}/chat/completions", headers=self.headers, json=self.body(slot, messages, schema))
         except httpx.HTTPError as exc:
             raise TransportError(f"{type(exc).__name__}") from exc
         if resp.status_code in (401, 402):
