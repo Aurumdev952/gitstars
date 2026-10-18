@@ -11,8 +11,7 @@ const MAX_ARCS = 16
 const STAGGER_S = 0.04
 // HDR gains: the travelling pulse crosses the bloom threshold while the base arc stays under it.
 const ARC_GAIN = 1.3
-// Less than the spec's 0.25: with eight arcs all bowing the same way, 0.25 coils into a whirl.
-const BOW = 0.16
+const BOW = 0.2
 
 type V3 = [number, number, number]
 
@@ -23,8 +22,12 @@ export function arcPoint(a: V3, ctrl: V3, b: V3, t: number, out: V3): V3 {
   return out
 }
 
-/** Control point: mid + normalize(viewDir × (b − a)) · |b − a| · BOW, so arcs always bow visibly. */
-export function arcControl(a: V3, b: V3, viewDir: V3, out: V3): V3 {
+/**
+ * Control point: mid + side · normalize(viewDir × (b − a)) · |b − a| · BOW, so arcs always bow
+ * visibly. With one side for every arc (the spec's formula) eight arcs all curl clockwise and read
+ * as a whirlpool around the star, so callers alternate `side` by rank and the arcs fan out instead.
+ */
+export function arcControl(a: V3, b: V3, viewDir: V3, out: V3, side: 1 | -1 = 1): V3 {
   const ab = [b[0] - a[0], b[1] - a[1], b[2] - a[2]]
   const len = Math.hypot(ab[0]!, ab[1]!, ab[2]!)
   let sx = viewDir[1] * ab[2]! - viewDir[2] * ab[1]!
@@ -33,9 +36,9 @@ export function arcControl(a: V3, b: V3, viewDir: V3, out: V3): V3 {
   const sl = Math.hypot(sx, sy, sz)
   if (sl < 1e-6) [sx, sy, sz] = [0, 1, 0]
   else [sx, sy, sz] = [sx / sl, sy / sl, sz / sl]
-  out[0] = (a[0] + b[0]) / 2 + sx * len * BOW
-  out[1] = (a[1] + b[1]) / 2 + sy * len * BOW
-  out[2] = (a[2] + b[2]) / 2 + sz * len * BOW
+  out[0] = (a[0] + b[0]) / 2 + side * sx * len * BOW
+  out[1] = (a[1] + b[1]) / 2 + side * sy * len * BOW
+  out[2] = (a[2] + b[2]) / 2 + side * sz * len * BOW
   return out
 }
 
@@ -65,7 +68,7 @@ function writeArcs(buf: RibbonBuffer, g: GalaxyIndex, i: number, flat: number): 
   let k = 0
   g.repos[i]!.neighbors.slice(0, MAX_ARCS).forEach(([j, cos], rank) => {
     positionAt(g.attrs, j, layout, pb)
-    arcControl(pa, pb, view, ctrl)
+    arcControl(pa, pb, view, ctrl, rank % 2 === 0 ? 1 : -1)
     const weight = Math.max(0, (cos - 0.35) / 0.65)
     seg.widthPx = 1.3 + 2.4 * weight
     seg.alpha = 0.3 + 0.6 * weight
