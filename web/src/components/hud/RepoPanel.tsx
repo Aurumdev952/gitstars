@@ -107,6 +107,19 @@ function RepoDetails({ g, i }: { g: GalaxyIndex; i: number }) {
           {r.archived && <Chip className="border-amber-200/20 text-amber-100/80">archived</Chip>}
         </div>
 
+        {r.outlier && (
+          <p className="mt-3 flex items-baseline gap-2 text-[12px] leading-snug text-ink-faint">
+            <span aria-hidden className="inline-block size-1.5 shrink-0 translate-y-[-1px] rounded-full border" style={{ borderColor: system.color.css }} />
+            <span>
+              Loosely placed in{' '}
+              <button type="button" className="text-ink-muted underline decoration-white/15 underline-offset-2 hover:text-ink" onClick={() => focus(system.id)}>
+                {system.name}
+              </button>
+              : its nearest stars are spread across several systems.
+            </span>
+          </p>
+        )}
+
         {discovered && (
           <p className="mt-4 flex items-start gap-2 rounded-xl border border-starlight/20 bg-starlight/[0.06] px-3 py-2.5 text-[12.5px] leading-snug text-[oklch(0.9_0.07_85)]">
             <Compass className="mt-px size-3.5 shrink-0" aria-hidden />

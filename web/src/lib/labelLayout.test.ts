@@ -60,7 +60,7 @@ describe('insetSlots', () => {
   it('keeps every slot on or within a few pixels of the anchor', () => {
     for (const [w, h] of [[120, 18], [240, 36], [60, 14]] as const) {
       const b: LabelBox = { x: 0, y: 0, w, h, slots: insetSlots(w, h), prev: null }
-      for (let s = 0; s < b.slots.length; s++) expect(rectDistance(rectAt(b, s), 0, 0)).toBeLessThanOrEqual(4)
+      for (let s = 0; s < b.slots.length; s++) expect(rectDistance(rectAt(b, s), 0, 0)).toBeLessThanOrEqual(6)
       expect(rectDistance(rectAt(b, 0), 0, 0)).toBe(0)
     }
   })

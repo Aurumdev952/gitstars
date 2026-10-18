@@ -134,9 +134,9 @@ function setSlot(out: Slot[], k: number, x: number, y: number) {
 
 /**
  * For a name set on its cluster's anchor: centred on it, then nudged up, down, left and right while
- * still covering it, and last just clear of it above and below.
+ * still covering it, then just clear of it above and below, and last with a corner on it.
  */
-export function insetSlots(w: number, h: number, out: Slot[] = slotArray(7)): Slot[] {
+export function insetSlots(w: number, h: number, out: Slot[] = slotArray(11)): Slot[] {
   setSlot(out, 0, -w / 2, -h / 2)
   setSlot(out, 1, -w / 2, -h * 0.9)
   setSlot(out, 2, -w / 2, -h * 0.1)
@@ -144,6 +144,10 @@ export function insetSlots(w: number, h: number, out: Slot[] = slotArray(7)): Sl
   setSlot(out, 4, -w * 0.3, -h / 2)
   setSlot(out, 5, -w / 2, -h - 4)
   setSlot(out, 6, -w / 2, 4)
+  setSlot(out, 7, 4, -h - 4)
+  setSlot(out, 8, -w - 4, -h - 4)
+  setSlot(out, 9, 4, 4)
+  setSlot(out, 10, -w - 4, 4)
   return out
 }
 

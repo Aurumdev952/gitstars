@@ -78,8 +78,12 @@ export function HoverTooltip() {
         <span>· {r.kind}</span>
       </p>
       <p className="mt-1 flex items-center gap-1.5 text-[11.5px] text-ink-faint">
-        <ClusterDot color={sys.color.css} className="size-1.5" />
-        {sys.name}
+        {r.outlier ? (
+          <span aria-hidden className="inline-block size-1.5 shrink-0 rounded-full border" style={{ borderColor: sys.color.css }} />
+        ) : (
+          <ClusterDot color={sys.color.css} className="size-1.5" />
+        )}
+        {r.outlier ? `Loosely in ${sys.name}` : sys.name}
       </p>
     </div>
   )

@@ -39,8 +39,10 @@ type ClusterLabel = {
   /** Placed in this frame's occupancy pass. */
   placed: boolean
   alpha: number
-  /** Scratch for this frame's sort keys: camera distance (galaxies) or projected radius (systems). */
+  /** Scratch for this frame's sort keys: priority (galaxies) or projected radius (systems). */
   key: number
+  /** Scratch: camera distance to the anchor this frame. */
+  dist: number
   /** Galaxy labels arrive one by one at the end of the intro; this is the delay in the stagger. */
   order: number
 }
@@ -77,7 +79,6 @@ const sizes: StarSizeUniforms = { sizeScale: 1, minPx: 1, maxPx: 1 }
 const TOP = REPO.candidates
 const topIdx = new Int32Array(TOP)
 const topScore = new Float64Array(TOP)
-const byKeyAsc = (a: ClusterLabel, b: ClusterLabel) => a.key - b.key
 const byKeyDesc = (a: ClusterLabel, b: ClusterLabel) => b.key - a.key
 
 function inkTint([r, g, b]: readonly number[], white: number) {
@@ -95,6 +96,7 @@ function makeLabels(nodes: ClusterNode[], macro: boolean): ClusterLabel[] {
     placed: false,
     alpha: 0,
     key: 0,
+    dist: 0,
     order: k,
   }))
 }
@@ -108,7 +110,7 @@ export function Labels({ galaxy }: { galaxy: GalaxyIndex }) {
   const macro = useMemo(() => makeLabels(galaxy.galaxies, true), [galaxy])
   const systems = useMemo(() => makeLabels(galaxy.systems, false), [galaxy])
   const all = useMemo(() => [...macro, ...systems], [macro, systems])
-  const byDistance = useMemo(() => [...macro], [macro])
+  const byPriority = useMemo(() => [...macro], [macro])
   const bySize = useRef<ClusterLabel[]>([])
   const groups = useRef<Map<ClusterLabel, Group>>(new Map())
   const texts = useRef<Map<ClusterLabel, TextLike>>(new Map())
@@ -214,11 +216,16 @@ export function Labels({ galaxy }: { galaxy: GalaxyIndex }) {
     const lensDim = s.lens.state === 'ready' ? 0.5 : 1
     const reveal = (order: number) => (sceneBus.labelClock === Infinity ? 1 : labelReveal(sceneBus.labelClock, order))
 
-    // Galaxy labels, nearest first. They fade once the camera is inside the galaxy.
-    for (const l of byDistance) l.key = cam.position.distanceTo(clusterAnchor(l.node, flat, anchor))
-    byDistance.sort(byKeyAsc)
-    for (const l of byDistance) {
-      const inside = Math.min(1, Math.max(0, (l.key / Math.max(1, l.node.radius) - 1.1) / 1.4))
+    // Galaxy labels, the largest on screen first (members over distance), so where galaxies overlap
+    // in projection a big one keeps its name and a small one yields. They fade once the camera is
+    // inside the galaxy.
+    for (const l of byPriority) {
+      l.dist = cam.position.distanceTo(clusterAnchor(l.node, flat, anchor))
+      l.key = l.node.core.length / Math.max(1, l.dist)
+    }
+    byPriority.sort(byKeyDesc)
+    for (const l of byPriority) {
+      const inside = Math.min(1, Math.max(0, (l.dist / Math.max(1, l.node.extent) - 1.1) / 1.4))
       const shown = inside > 0.05 && placeCluster(l, texts.current.get(l), o, m, flat)
       const emphasis = (s.hoveredCluster === null ? 0.86 : s.hoveredCluster === l.node.id ? 1 : 0.4) * lensDim
       const born = layout.timelineOn ? bornShare(u.uGalaxyBorn.value[l.node.index] ?? 1) : 1
