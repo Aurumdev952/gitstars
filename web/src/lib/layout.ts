@@ -1,5 +1,6 @@
 // CPU mirror of shaders/chunks/layout.glsl. Picking, labels and the Director read positions from
-// here, so any change to the shader's position math must land in both places (layout.test.ts).
+// here, so any change to the shader's position math must land in both places. layout.test.ts pins
+// this side's formula; nothing runs the GLSL, so keeping the two in step is a review duty.
 
 export type LayoutUniforms = {
   flat: number

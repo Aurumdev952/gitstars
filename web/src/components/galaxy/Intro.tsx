@@ -20,7 +20,7 @@ const modeOf = (p: IntroPhase): IntroMode => (p === 'fade' ? 'fade' : p === 'don
  */
 export function Intro({ galaxy }: { galaxy: GalaxyIndex }) {
   const gl = useThree((s) => s.gl)
-  const clock = useRef({ t: 0, rate: 1 })
+  const clock = useRef({ t: 0, rate: 1, started: false, cameraFree: false })
 
   useLayoutEffect(() => {
     const u = sceneBus.uniforms
@@ -35,21 +35,49 @@ export function Intro({ galaxy }: { galaxy: GalaxyIndex }) {
   }, [galaxy, gl])
 
   useEffect(() => {
-    const skip = () => {
+    const fastForward = () => {
       const c = clock.current
       if (useGalaxyStore.getState().intro === 'done') return
       c.rate = Math.max(c.rate, (INTRO.end - c.t) / SKIP_S)
     }
+    const skip = fastForward
+    // A camera command (a click on a star, a galaxy key, the flat toggle) or a drag takes the
+    // camera over; the intro stops posing it so the flight it started is not overwritten.
+    const offCamera = useGalaxyStore.subscribe(
+      (s) => s.cameraBusy || s.dragging,
+      (taken) => {
+        const c = clock.current
+        if (!taken || !c.started || useGalaxyStore.getState().intro === 'done') return
+        c.cameraFree = true
+        fastForward()
+      },
+    )
+    // The list view stops the frame loop, which would strand the intro (and the HUD it holds
+    // back) mid-spiral; leaving 3D finishes it on the spot.
+    const offView = useGalaxyStore.subscribe(
+      (s) => s.view,
+      (view) => {
+        const s = useGalaxyStore.getState()
+        if (view !== 'list' || s.intro === 'done') return
+        const u = sceneBus.uniforms
+        u.uIntro.value = 1
+        sceneBus.labelClock = Infinity
+        gl.domElement.style.opacity = ''
+        s.actions.setIntro('done')
+      },
+    )
     const opts = { capture: true, passive: true } as const
     window.addEventListener('pointerdown', skip, opts)
     window.addEventListener('wheel', skip, opts)
     window.addEventListener('keydown', skip, opts)
     return () => {
+      offCamera()
+      offView()
       window.removeEventListener('pointerdown', skip, opts)
       window.removeEventListener('wheel', skip, opts)
       window.removeEventListener('keydown', skip, opts)
     }
-  }, [])
+  }, [gl])
 
   // Ahead of CameraControls (-1), so the pose written here is the one it renders this frame.
   useFrame((state, dt) => {
@@ -60,13 +88,14 @@ export function Intro({ galaxy }: { galaxy: GalaxyIndex }) {
     const pose = homePose()
     if (!c || !pose) return
     const ck = clock.current
+    ck.started = true
     ck.t += Math.min(dt, MAX_STEP) * ck.rate
     const f = introFrame(modeOf(phase), ck.t)
     const u = sceneBus.uniforms
     u.uIntro.value = f.intro
     gl.domElement.style.opacity = String(f.fade)
     sceneBus.labelClock = f.labelClock
-    if (phase === 'spiral' || phase === 'settling') {
+    if ((phase === 'spiral' || phase === 'settling') && !ck.cameraFree) {
       const { azimuth, distance } = introCamera(f, pose)
       const [tx, ty, tz] = pose.target
       const sp = Math.sin(pose.polar)

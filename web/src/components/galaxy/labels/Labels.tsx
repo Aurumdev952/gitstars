@@ -56,8 +56,8 @@ type RepoState = {
   recheck: ReturnType<typeof setTimeout> | 0
 }
 
-// Per-frame scratch. The label pass runs every frame over up to 10k stars, so nothing in it
-// allocates: rects, slots, boxes and screen points are reused.
+// Per-frame scratch. The label pass runs every frame over up to 10k stars, so its per-star and
+// per-label work reuses these rects, slots, boxes and screen points instead of allocating.
 const scratch: [number, number, number] = [0, 0, 0]
 const screen: ScreenPoint = { x: 0, y: 0, viewDist: 0 }
 const anchor = new Vector3()
@@ -392,6 +392,7 @@ function rankRepos(
   let count = 0
   for (let i = 0; i < g.n; i++) {
     if ((sceneBus.dyn[i * 4] ?? 1) < 0.5 || skip.includes(i)) continue
+    if (layout.timelineOn && bornAt(g.attrs, i, layout) < 0.5) continue
     const [x, y, z] = positionAt(g.attrs, i, layout, scratch)
     const p = projectPoint(m, x, y, z, screen)
     if (!p || p.x < 0 || p.y < 0 || p.x > size.width || p.y > size.height) continue

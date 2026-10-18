@@ -104,6 +104,7 @@ export function ClusterHull({ galaxy }: { galaxy: GalaxyIndex }) {
 
   useEffect(
     () => () => {
+      mesh.current?.geometry.dispose()
       material.dispose()
       outline.dispose()
       outlineMat.material.dispose()

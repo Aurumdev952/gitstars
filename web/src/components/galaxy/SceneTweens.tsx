@@ -120,14 +120,18 @@ export function SceneTweens() {
   return null
 }
 
+const sums = { g: new Float32Array(0), s: new Float32Array(0) }
+
 function writeBornShares(g: GalaxyIndex, on: boolean, galaxy: Float32Array) {
   const sys = sceneBus.systemBorn.length === g.systems.length ? sceneBus.systemBorn : new Float32Array(g.systems.length)
   galaxy.fill(1)
   sys.fill(1)
   if (on) {
     const layout = currentLayout()
-    const gSum = new Float32Array(g.galaxies.length)
-    const sSum = new Float32Array(g.systems.length)
+    if (sums.g.length !== g.galaxies.length) sums.g = new Float32Array(g.galaxies.length)
+    if (sums.s.length !== g.systems.length) sums.s = new Float32Array(g.systems.length)
+    const gSum = sums.g.fill(0)
+    const sSum = sums.s.fill(0)
     for (let i = 0; i < g.n; i++) {
       const b = bornAt(g.attrs, i, layout)
       gSum[g.galaxyOf[i]!]! += b

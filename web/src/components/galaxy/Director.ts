@@ -42,6 +42,7 @@ function nearestAngle(from: number, to: number) {
 
 function begin() {
   const id = ++seq
+  sceneBus.warpTarget = 0
   useGalaxyStore.getState().actions.setCameraBusy(true)
   const alive = () => id === seq
   const end = () => {
@@ -50,7 +51,10 @@ function begin() {
   return { alive, end }
 }
 
-function boundingSphere(indices: Iterable<number>, pad = 1.1, minRadius = 8, quantile = 0.95, layout = currentLayout()): Sphere | null {
+/** Where stars will be once the intro lands: a flight started mid-spiral aims at the settled star. */
+const landedLayout = () => ({ ...currentLayout(), intro: 1 })
+
+function boundingSphere(indices: Iterable<number>, pad = 1.1, minRadius = 8, quantile = 0.95, layout = landedLayout()): Sphere | null {
   const g = useGalaxyStore.getState().galaxy
   if (!g) return null
   const pts: Vector3[] = []
@@ -73,7 +77,7 @@ export function homePose(): (Framing & { azimuth: number; polar: number }) | nul
   const g = useGalaxyStore.getState().galaxy
   const cam = sceneBus.camera
   if (!g || !cam) return null
-  const aspect = sceneBus.size.width / Math.max(1, sceneBus.size.height)
+  const aspect = cam.aspect
   if (!homeCache || homeCache.g !== g || Math.abs(homeCache.aspect - aspect) > 1e-3 || homeCache.fov !== cam.fov) {
     const pose = fitPoints(g.attrs.pos, g.n, {
       azimuth: HOME_AZIMUTH,
@@ -92,7 +96,8 @@ export function homePose(): (Framing & { azimuth: number; polar: number }) | nul
 export type Director = typeof director
 
 export const director = {
-  async home(animate = true) {
+  async home(animate = true): Promise<void> {
+    if (useGalaxyStore.getState().view === 'flat') return director.frameView(true, animate)
     const c = sceneBus.controls
     const pose = homePose()
     if (!c || !pose) return
@@ -104,7 +109,7 @@ export const director = {
   },
 
   /** Frames the whole map for the layout being tweened to: top-down for flat, the home orbit for 3D. */
-  async frameView(flat: boolean, animate = true) {
+  async frameView(flat: boolean, animate = true): Promise<void> {
     const c = sceneBus.controls
     const g = useGalaxyStore.getState().galaxy
     if (!c || !g) return
@@ -122,7 +127,7 @@ export const director = {
     const g = useGalaxyStore.getState().galaxy
     if (!c || !g) return
     const { alive, end } = begin()
-    const p = new Vector3(...positionAt(g.attrs, i, currentLayout(), [0, 0, 0]))
+    const p = new Vector3(...positionAt(g.attrs, i, landedLayout(), [0, 0, 0]))
     const sphere = new Sphere(p, Math.max(12, 4 * g.d8[i]!))
     c.getTarget(v)
     const a = animated(animate)

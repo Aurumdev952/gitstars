@@ -80,7 +80,9 @@ async function runQuery(g: GalaxyIndex, query: string | null, modelReady: boolea
   await sess.lexical
   const lexical = await sess.api.lexical(query, MAX_HITS)
   if (seq !== querySeq) return
-  setHits(fuseHits(g, query, lexical.idx, null))
+  // With the model ready, a keyword list that only half matched waits for the semantic pass,
+  // which may judge it noise; showing it first would flash results that then vanish.
+  if (!(modelReady && lexical.partial)) setHits(fuseHits(g, query, lexical.idx, null))
   if (!modelReady) return
   await sess.vectors
   const semantic = await sess.api.semantic(query, MAX_HITS)

@@ -37,7 +37,8 @@ export function FirstRunHint() {
       s.overlay === 'none' &&
       s.selected === null &&
       s.focusCluster === null &&
-      !s.timeline.open,
+      !s.timeline.open &&
+      s.lensQuery === null,
   )
   const ref = useRef<HTMLDivElement>(null)
   useOccluder(ref)

@@ -85,7 +85,7 @@ function TimelinePanel({ g }: { g: GalaxyIndex }) {
       transition={{ duration: reduced ? 0 : 0.28, ease: [0.22, 1, 0.36, 1] }}
       className={cn(
         'fixed bottom-5 z-10 flex flex-col items-stretch',
-        sidePanel ? 'right-[456px] left-[288px] mx-auto max-w-[560px]' : 'left-1/2 w-[min(560px,calc(100vw-620px))] -translate-x-1/2',
+        sidePanel ? 'right-[456px] left-[288px] mx-auto max-w-[560px]' : 'left-1/2 w-[max(300px,min(560px,calc(100vw-620px)))] -translate-x-1/2',
       )}
     >
       {!collapsed && (
@@ -131,7 +131,18 @@ function TimelinePanel({ g }: { g: GalaxyIndex }) {
                 type="button"
                 role="radio"
                 aria-checked={speed === s}
+                tabIndex={speed === s ? 0 : -1}
                 onClick={() => timeline.setSpeed(s)}
+                onKeyDown={(e) => {
+                  const step = e.key === 'ArrowRight' || e.key === 'ArrowDown' ? 1 : e.key === 'ArrowLeft' || e.key === 'ArrowUp' ? -1 : 0
+                  if (!step) return
+                  e.preventDefault()
+                  e.stopPropagation()
+                  const next = SPEEDS[(SPEEDS.indexOf(s) + step + SPEEDS.length) % SPEEDS.length]!
+                  timeline.setSpeed(next)
+                  const group = e.currentTarget.parentElement
+                  requestAnimationFrame(() => group?.querySelector<HTMLElement>('[aria-checked="true"]')?.focus())
+                }}
                 className={cn(
                   'tabular rounded-full px-2 py-[3px] text-[11.5px] transition-colors',
                   speed === s ? 'bg-white/[0.09] text-ink' : 'text-ink-faint hover:text-ink-muted',

@@ -18,7 +18,6 @@ export function Effects() {
   const ca = useRef<ChromaticAberrationEffect>(null)
   const offset = useRef(new Vector2(CA_BASE, CA_BASE))
 
-  // Radial aberration at the frame edge, swelling while warp streaks run.
   useFrame(() => {
     const e = ca.current
     if (!e) return
@@ -42,7 +41,7 @@ export function Effects() {
       />
       {showCa && <ChromaticAberration ref={ca} offset={offset.current} radialModulation modulationOffset={0.35} />}
       <Vignette offset={vignette.offset} darkness={vignette.darkness} />
-      {tier.noise && <Noise opacity={noise} premultiply blendFunction={BlendFunction.SCREEN} />}
+      {tier.noise && !still && <Noise opacity={noise} premultiply blendFunction={BlendFunction.SCREEN} />}
       <ToneMapping mode={ToneMappingMode.AGX} />
     </EffectComposer>
   )

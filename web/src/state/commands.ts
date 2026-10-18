@@ -59,7 +59,10 @@ export const commands = {
 
   toggleFlat: () => get().actions.setView(get().view === 'flat' ? '3d' : 'flat'),
   toggleList: () => get().actions.setView(get().view === 'list' ? '3d' : 'list'),
-  toggleTimeline: () => timeline.toggle(),
+  toggleTimeline() {
+    if (get().view === 'list') get().actions.setView('3d')
+    timeline.toggle()
+  },
   playPause: () => timeline.playPause(),
 
   forgottenStar() {

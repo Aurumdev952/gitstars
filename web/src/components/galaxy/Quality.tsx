@@ -1,41 +1,33 @@
-import { useEffect } from 'react'
+import { useEffect, useRef } from 'react'
 import { PerformanceMonitor } from '@react-three/drei'
 import { useThree } from '@react-three/fiber'
-import { TIERS, effectiveTier, stepTier } from '#/lib/quality'
+import { TIERS, applyVerdict, effectiveTier, type AutoState } from '#/lib/quality'
 import { useGalaxyStore } from '#/state/store'
 
 /**
- * Adaptive quality: drei's PerformanceMonitor steps the auto tier down when the frame rate sags
- * and back up when it recovers; the tier sets the canvas DPR here and the post chain in Effects.
+ * Adaptive quality: drei's PerformanceMonitor reports slow and fast windows, `applyVerdict` turns
+ * them into tier changes, and the tier sets the canvas DPR here and the post chain in Effects.
+ * drei's own flip-flop fallback is not used: it counts every verdict, including inclines at the
+ * top tier, so a steady 60 fps machine would fall back to low after three windows.
  */
 export function Quality() {
   const setDpr = useThree((s) => s.setDpr)
   const tier = useGalaxyStore((s) => effectiveTier(s.settings.quality, s.autoTier))
-  // Shader compiles, the intro and the model warm-up all hitch the first seconds; judging the
-  // frame rate then would lock a fast machine into low.
-  const settled = useGalaxyStore((s) => s.intro === 'done' && s.settings.quality === 'auto')
+  // Shader compiles, the intro and the model warm-up hitch the first seconds, and under the
+  // 'demand' frameloop (reduced motion, ?freeze) sparse frames look like a slow GPU.
+  const judging = useGalaxyStore((s) => s.intro === 'done' && s.settings.quality === 'auto' && !s.frozen && s.settings.motion === 'full')
+  const auto = useRef<AutoState>({ tier: useGalaxyStore.getState().autoTier, changes: 0 })
 
   useEffect(() => {
     const [lo, hi] = TIERS[tier].dpr
     setDpr(Math.max(lo, Math.min(hi, window.devicePixelRatio)))
   }, [tier, setDpr])
 
-  const step = (dir: 'up' | 'down') => {
-    const s = useGalaxyStore.getState()
-    s.actions.setAutoTier(stepTier(s.autoTier, dir))
+  const verdict = (dir: 'up' | 'down') => {
+    auto.current = applyVerdict(auto.current, dir)
+    useGalaxyStore.getState().actions.setAutoTier(auto.current.tier)
   }
-  if (!settled) return null
-  // Bounds in fps: below 45 steps down, above 57 steps back up. Two flip-flops then it holds, so a
-  // scene that sits on the boundary does not oscillate.
-  return (
-    <PerformanceMonitor
-      ms={500}
-      iterations={6}
-      bounds={() => [45, 57]}
-      flipflops={2}
-      onDecline={() => step('down')}
-      onIncline={() => step('up')}
-      onFallback={() => useGalaxyStore.getState().actions.setAutoTier('low')}
-    />
-  )
+  if (!judging) return null
+  // Bounds in fps: below 45 steps down, above 57 steps back up.
+  return <PerformanceMonitor ms={500} iterations={6} bounds={() => [45, 57]} onDecline={() => verdict('down')} onIncline={() => verdict('up')} />
 }

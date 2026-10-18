@@ -71,11 +71,15 @@ export const KEYMAP: Binding[] = [
     keys: ['Space'],
     label: 'Play or pause the timeline',
     group: 'View',
-    match: (e) => plain(' ')(e) && useGalaxyStore.getState().timeline.open,
+    match: (e) => plain(' ')(e) && useGalaxyStore.getState().timeline.open && useGalaxyStore.getState().view !== 'list' && !activatable(e.target),
     run: () => commands.playPause(),
   },
   { keys: ['?'], label: 'Keyboard shortcuts', group: 'View', match: plain('?'), run: () => commands.openShortcuts() },
 ]
+
+/** Controls that Space activates or scrolls; the timeline's Space shortcut leaves them alone. */
+const activatable = (t: EventTarget | null) =>
+  t instanceof HTMLElement && t.closest('button, a, [role="radio"], [role="slider"], [role="button"], [role="option"], [data-scroll-region]') !== null
 
 const typing = (t: EventTarget | null) =>
   t instanceof HTMLElement && (t.isContentEditable || t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.tagName === 'SELECT')

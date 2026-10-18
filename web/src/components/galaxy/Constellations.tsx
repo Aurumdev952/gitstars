@@ -64,9 +64,9 @@ export function Constellations({ galaxy }: { galaxy: GalaxyIndex }) {
   useEffect(() => {
     const store = useGalaxyStore
     const offFilter = store.subscribe(
-      (s) => s.filtered,
-      (f) => {
-        const ghost = store.getState().settings.ghosts ? GHOST_ALPHA : 0
+      (s) => [s.filtered, s.settings.ghosts] as const,
+      ([f, ghosts]) => {
+        const ghost = ghosts ? GHOST_ALPHA : 0
         for (let k = 0; k < c.count; k++) {
           const shown = !f || (f.visible[c.ends[k * 2]!]! && f.visible[c.ends[k * 2 + 1]!]!)
           c.buffer.setAlpha(k, shown ? c.alpha[k]! : ghost * (c.alpha[k]! / BASE_ALPHA))
@@ -74,9 +74,9 @@ export function Constellations({ galaxy }: { galaxy: GalaxyIndex }) {
         c.buffer.commit(c.count, ['aStyle'])
         sceneBus.invalidate()
       },
-      { fireImmediately: true },
+      { fireImmediately: true, equalityFn: (a, b) => a[0] === b[0] && a[1] === b[1] },
     )
-    // Focusing a cluster redraws the constellations from their first star outward.
+    // Focusing a cluster draws every constellation on again, each stroke from one end to the other.
     const offFocus = store.subscribe(
       (s) => s.focusCluster,
       (id) => {

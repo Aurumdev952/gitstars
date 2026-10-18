@@ -67,13 +67,16 @@ void main() {
   float dist = distance(cameraPosition, mid);
   // System constellations only resolve once the camera is near; the overview keeps a faint trace.
   float near = aFade.x > 0.0 ? mix(0.07, 1.0, 1.0 - smoothstep(aFade.x * 3.5, aFade.x * 9.0, dist)) : 1.0;
+  // Segments that belong to no galaxy (arcs, the hull outline) take no galaxy or focus dimming.
+  bool owned = aStyle.w >= 0.0;
   int gi = int(clamp(aStyle.w, 0.0, 31.0));
-  bool inFocus = abs(aStyle.w - uFocusCluster) < 0.5;
-  float focused = inFocus ? 1.0 + 0.4 * uFocusAmt : 1.0 - 0.85 * uFocusAmt;
+  float galaxyVis = owned ? uGalaxyVis[gi] : 1.0;
+  bool inFocus = owned && abs(aStyle.w - uFocusCluster) < 0.5;
+  float focused = !owned ? 1.0 : inFocus ? 1.0 + 0.4 * uFocusAmt : 1.0 - 0.85 * uFocusAmt;
   // Strokes recede to uRest except in the hovered star's system and the focused galaxy.
   float hot = max(abs(aFade.z - uHotSystem) < 0.5 ? 1.0 : 0.0, inFocus ? uFocusAmt : 0.0);
   float emphasis = mix(uRest, 1.0, hot);
   float viewDist = -(modelViewMatrix * vec4(mid, 1.0)).z;
-  vAlpha = aStyle.y * near * focused * emphasis * uGalaxyVis[gi] * born * front * uOpacity * (1.0 - 0.75 * uLens)
+  vAlpha = aStyle.y * near * focused * emphasis * galaxyVis * born * front * uOpacity * (1.0 - 0.75 * uLens)
          * (1.0 - 0.7 * gsFog(viewDist));
 }

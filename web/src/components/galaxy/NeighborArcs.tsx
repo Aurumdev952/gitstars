@@ -15,7 +15,7 @@ const BOW = 0.2
 
 type V3 = [number, number, number]
 
-/** Point `t` of the quadratic arc a → b bowed toward the viewer by |b − a| · 0.25. */
+/** Point `t` of the quadratic Bézier a → ctrl → b. */
 export function arcPoint(a: V3, ctrl: V3, b: V3, t: number, out: V3): V3 {
   const u = 1 - t
   for (let c = 0; c < 3; c++) out[c] = u * u * a[c]! + 2 * u * t * ctrl[c]! + t * t * b[c]!
@@ -145,7 +145,9 @@ export function NeighborArcs({ galaxy }: { galaxy: GalaxyIndex }) {
       return
     }
     // Rebuild while the flat tween runs, in steps, so arcs stay attached to their stars.
-    if (st.flat < 0 || Math.abs(u - st.flat) > 0.02 || (u !== st.flat && (u === 0 || u === 1))) {
+    // Segments are built in the current layout, so rebuild while the intro still moves the stars.
+    const spiralling = sceneBus.uniforms.uIntro.value < 1
+    if (spiralling || st.flat < 0 || Math.abs(u - st.flat) > 0.02 || (u !== st.flat && (u === 0 || u === 1))) {
       st.flat = u
       buffer.commit(writeArcs(buffer, galaxy, st.anchor, u))
     }

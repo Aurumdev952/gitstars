@@ -29,5 +29,20 @@ export function stepTier(t: Tier, dir: 'up' | 'down'): Tier {
   return ORDER[Math.min(ORDER.length - 1, Math.max(0, k))]!
 }
 
+/** After this many real tier changes the auto tier holds, so a scene on the boundary cannot oscillate. */
+export const MAX_AUTO_CHANGES = 3
+
+export type AutoState = { tier: Tier; changes: number }
+
+/**
+ * One frame-rate verdict applied to the auto tier. A verdict that cannot move the tier (incline at
+ * high, decline at low) is not a change, and once the budget of changes is spent the tier holds.
+ */
+export function applyVerdict(s: AutoState, dir: 'up' | 'down'): AutoState {
+  if (s.changes >= MAX_AUTO_CHANGES) return s
+  const tier = stepTier(s.tier, dir)
+  return tier === s.tier ? s : { tier, changes: s.changes + 1 }
+}
+
 /** A fixed setting wins; `auto` follows the monitor. */
 export const effectiveTier = (setting: QualitySetting, auto: Tier): Tier => (setting === 'auto' ? auto : setting)

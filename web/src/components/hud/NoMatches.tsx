@@ -31,10 +31,10 @@ export function NoMatches({ inline = false }: { inline?: boolean }) {
   )
   if (inline) return empty ? <div className="mx-auto my-10 flex w-[min(460px,100%)] items-center gap-3 px-5">{body}</div> : null
   return (
-    <AnimatePresence>
-      {empty && (
+    <div role="status" aria-live="polite">
+      <AnimatePresence>
+        {empty && (
         <motion.div
-          role="status"
           initial={{ opacity: 0, y: 8, scale: 0.98 }}
           animate={{ opacity: 1, y: 0, scale: 1 }}
           exit={{ opacity: 0, y: 4 }}
@@ -42,7 +42,8 @@ export function NoMatches({ inline = false }: { inline?: boolean }) {
         >
           {body}
         </motion.div>
-      )}
-    </AnimatePresence>
+        )}
+      </AnimatePresence>
+    </div>
   )
 }
