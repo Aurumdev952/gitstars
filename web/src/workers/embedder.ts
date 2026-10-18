@@ -4,7 +4,21 @@ export type ModelProgress = { loaded: number; total: number; device: Device }
 
 // ORT-web's WASM backend has no GatherBlockQuantized kernel, which the q8 and q4 exports use for
 // their embedding table, so the WASM fallback runs fp16 (cosine 0.9998 vs fp32 per the model card).
-const DTYPE = { webgpu: 'q8', wasm: 'fp16' } as const
+export const DTYPE = { webgpu: 'q8', wasm: 'fp16' } as const
+
+/** Where `bun run models:fetch` puts the model and ORT's wasm, relative to `public/` and the base URL. */
+export const VENDORED = { models: 'models/', ort: 'models/ort/' } as const
+
+/** The two ORT-web builds transformers.js picks between: asyncify, or plain on Safari < 26 without WebGPU. */
+export const ORT_RUNTIMES = ['ort-wasm-simd-threaded.asyncify', 'ort-wasm-simd-threaded'] as const
+
+/** Drops the vision and audio towers, so transformers.js resolves and loads only the text model. */
+export function textOnly<C>(config: C): C {
+  const c = config as Record<string, unknown>
+  c.vision_config = null
+  c.audio_config = null
+  return config
+}
 
 export type Embedder = {
   device: Device
@@ -39,10 +53,7 @@ export async function loadEmbedder(model: string, dim: number, onProgress: (p: M
         }
         onProgress({ loaded, total, device })
       }
-      const config = await tf.AutoConfig.from_pretrained(model)
-      const textOnly = config as unknown as Record<string, unknown>
-      textOnly.vision_config = null
-      textOnly.audio_config = null
+      const config = textOnly(await tf.AutoConfig.from_pretrained(model))
       const [tokenizer, net] = await Promise.all([
         tf.AutoTokenizer.from_pretrained(model),
         tf.AutoModel.from_pretrained(model, { config, device, dtype: DTYPE[device], progress_callback }),

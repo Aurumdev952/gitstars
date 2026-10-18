@@ -12,6 +12,7 @@
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "fixture": "bun scripts/make-fixture.ts",
+    "models:fetch": "bun scripts/fetch-model.ts",
     "generate-routes": "tsr generate"
   },
   "dependencies": {
