@@ -6,14 +6,13 @@ import asyncio
 import json
 import time
 from dataclasses import dataclass, field, replace
-from typing import Literal
 
 from pydantic import ValidationError
 from rich.progress import Progress
 
 from gitstars import decider as dec
 from gitstars.cards import load_card, load_gate
-from gitstars.config import openrouter_key
+from gitstars.config import Provider, openrouter_key
 from gitstars.context import Ctx
 from gitstars.db import DB
 from gitstars.domain import CacheKey, JudgeVerdict, Repo, sha
@@ -30,8 +29,6 @@ MAX_JUDGE_RETRIES = 2
 # Free upstreams 429 often (22 of 66 requests in the first 30-repo run); a 429 is cheap, so hop further.
 MAX_MODEL_HOPS = 6
 BATCH_SIZE = 30
-
-Provider = Literal["openrouter", "local"]
 
 
 @dataclass

@@ -5,6 +5,9 @@ import subprocess
 from dataclasses import dataclass
 from functools import cache
 from pathlib import Path
+from typing import Literal
+
+Provider = Literal["openrouter", "local"]
 
 VIEWER = "Aurumdev952"
 DECIDER_MODEL = "perplexity/pplx-decider-v1.2"

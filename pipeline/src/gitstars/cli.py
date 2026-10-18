@@ -13,15 +13,15 @@ from rich.table import Table
 from rich.text import Text
 
 from gitstars.cards import gate_key, load_card, load_gate
-from gitstars.config import Paths, openrouter_key
+from gitstars.config import Paths, Provider, openrouter_key
 from gitstars.context import Ctx, commit_key
 from gitstars.db import DB
 from gitstars.embed import embed_freshness
 from gitstars.extract import assemble
 from gitstars.llm.openrouter import read_quota
-from gitstars.naming import cluster_name
+from gitstars.naming import NAME_RESERVE, cluster_name
 from gitstars.stages import STAGES
-from gitstars.summarize import Provider, job_for, load_summary
+from gitstars.summarize import job_for, load_summary
 from gitstars.tokens import count_tokens
 
 app = typer.Typer(no_args_is_help=True, add_completion=False, help="gitstars pipeline: GitHub stars → galaxy export.")
@@ -87,10 +87,13 @@ def summarize(
     limit: Limit = None, force: Force = False, provider: ProviderOpt = "openrouter", reserve: Reserve = 100, repo: Only = None
 ) -> None:
     """Summarize on the model pool and judge each summary. Most-starred first; stops at the quota reserve."""
-    if provider not in ("openrouter", "local"):
+    _run("summarize", limit, force, repo, provider=_provider(provider), reserve=reserve)
+
+
+def _provider(value: str) -> Provider:
+    if value not in ("openrouter", "local"):
         raise typer.BadParameter("provider must be openrouter or local")
-    p: Provider = provider  # type: ignore[assignment]
-    _run("summarize", limit, force, repo, provider=p, reserve=reserve)
+    return value  # type: ignore[return-value]
 
 
 @app.command()
@@ -106,9 +109,9 @@ def layout(force: Force = False) -> None:
 
 
 @app.command()
-def name(limit: Limit = None, force: Force = False, reserve: Reserve = 100) -> None:
-    """LLM names for systems on the free pool; galaxies are named from their systems."""
-    _run("name", limit, force, reserve=reserve)
+def name(limit: Limit = None, force: Force = False, provider: ProviderOpt = "openrouter", reserve: Reserve = NAME_RESERVE) -> None:
+    """LLM names for every system, then every galaxy from its systems' names."""
+    _run("name", limit, force, provider=_provider(provider), reserve=reserve)
 
 
 @app.command()
@@ -127,7 +130,7 @@ def run(
     for stage in STAGES.values():
         if stage.uses_llm and not llm:
             continue
-        kwargs: dict[str, Any] = {"provider": provider} if stage.name == "summarize" else {}
+        kwargs: dict[str, Any] = {"provider": _provider(provider)} if stage.name in ("summarize", "name") else {}
         _run(stage.name, None if stage.name in ("layout", "export") else limit, False, **kwargs)
 
 
