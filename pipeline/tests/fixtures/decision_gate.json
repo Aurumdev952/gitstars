@@ -1,0 +1,96 @@
+{
+ "request": {
+  "model": "perplexity/pplx-decider-v1.2",
+  "state": {
+   "repository": "sharkdp/fd",
+   "description": "A simple, fast and user-friendly alternative to 'find'",
+   "candidates": {
+    "readme": "fd is a program to find entries in your filesystem. It is a simple, fast and user-friendly alternative to find. While it does not aim to support all of find's powerful functionality, it provides sensible (opinionated) defaults for a majority of use cases. Features: Intuitive syntax: fd PATTERN instead of find -iname '*PATTERN*'. Regular expression (default) and glob-based patterns. Very fast due to parallelized directory traversal. Uses colors to highlight different file types (same as ls). Supports parallel command execution. Smart case. Ignores hidden directories and files, by default. Ignores patterns from your .gitignore, by default.",
+    "changelog_head": "Upcoming release. Features. Bugfixes. Changes. Other. v10.2.0 Features: Add --hyperlink option to add OSC 8 hyperlinks to output."
+   }
+  },
+  "questions": {
+   "keep_readme": {
+    "type": "noul",
+    "instructions": "Does `candidates.readme` contain project-specific information about what the repository `repository` does or offers?",
+    "criteria": {
+     "true": "It describes this project's specific purpose, features, concepts, API or design.",
+     "false": "It is generic boilerplate: template text, license, install-only steps, contribution or CI notes."
+    }
+   },
+   "keep_changelog_head": {
+    "type": "noul",
+    "instructions": "Does `candidates.changelog_head` contain project-specific information about what the repository `repository` does or offers?",
+    "criteria": {
+     "true": "It describes this project's specific purpose, features, concepts, API or design.",
+     "false": "It is generic boilerplate: template text, license, install-only steps, contribution or CI notes."
+    }
+   },
+   "readme_quality": {
+    "type": "choice",
+    "instructions": "How well does `candidates.readme` explain what the repository `repository` is and does?",
+    "criteria": {
+     "rich": "It explains the project's purpose and features in specific detail.",
+     "partial": "It says what the project is but gives little specific detail.",
+     "template": "It is mostly unedited template or boilerplate text with little about this project.",
+     "missing": "There is no README text, or it says nothing about the project."
+    }
+   },
+   "specificity": {
+    "type": "score",
+    "instructions": "How specific is `description` to this repository?",
+    "criteria": [
+     "Generic",
+     "Somewhat specific",
+     "Very specific"
+    ]
+   }
+  }
+ },
+ "response": {
+  "model": "perplexity/pplx-decider-v1.2-20261016",
+  "answers": {
+   "keep_readme": {
+    "type": "noul",
+    "noul": 0.9961556633745695
+   },
+   "keep_changelog_head": {
+    "type": "noul",
+    "noul": 0.2298978561362321
+   },
+   "readme_quality": {
+    "type": "choice",
+    "choice": "rich",
+    "probabilities": {
+     "rich": 0.9017043128284091,
+     "partial": 0.09348620048663348,
+     "template": 0.0029065261377239126,
+     "missing": 0.0019029605472335128
+    },
+    "confidence": 0.8689390837712122
+   },
+   "specificity": {
+    "type": "score",
+    "score": 1.1140325505948914,
+    "legend": {
+     "0": "Generic",
+     "1": "Somewhat specific",
+     "2": "Very specific"
+    },
+    "probabilities": {
+     "0": 0.1383973783813205,
+     "1": 0.6091726926424677,
+     "2": 0.2524299289762119
+    },
+    "confidence": 0.41375903896370136
+   }
+  },
+  "usage": {
+   "input_tokens": 557,
+   "output_tokens": 4,
+   "cost": 1.114e-05
+  },
+  "id": "gen-dec-1792278064-H9uLXsj1ElA8b1JDtjiS",
+  "provider": "Perplexity"
+ }
+}
