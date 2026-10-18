@@ -13,6 +13,7 @@ uv run gs name --provider local        # or the free pool; systems, then galaxie
 uv run gs export
 uv run gs show owner/name       # card, gate verdict, summary, judge scores
 uv run gs report                # galaxies and systems with sample members
+uv run gs coherence             # 8-NN same-system rates, kNN modularity, galaxy separation of the layout
 uv run gs status                # progress per stage and quota left
 uv run pytest
 ```
