@@ -1,4 +1,4 @@
-import { useMemo, useRef } from 'react'
+import { useEffect, useMemo, useRef } from 'react'
 import { Billboard, Text } from '@react-three/drei'
 import { useFrame } from '@react-three/fiber'
 import { Color, LinearSRGBColorSpace, Vector3, type Group, type PerspectiveCamera } from 'three'
@@ -86,7 +86,12 @@ export function Labels({ galaxy }: { galaxy: GalaxyIndex }) {
     alpha: [] as number[],
     placed: new Map<number, number>(),
     width: new Map<number, number>(),
+    /** The DOM pool these assignments belong to; a remounted pool starts empty. */
+    pool: null as HTMLElement[] | null,
+    recheck: 0 as ReturnType<typeof setTimeout> | 0,
   })
+  useEffect(() => () => clearTimeout(repo.current.recheck), [])
+  const occluderCache = useRef({ at: -Infinity, rects: [] as { x0: number; y0: number; x1: number; y1: number }[] })
 
   useFrame(({ camera, size }, dt) => {
     const cam = camera as PerspectiveCamera
@@ -105,10 +110,18 @@ export function Labels({ galaxy }: { galaxy: GalaxyIndex }) {
       return next
     }
 
-    for (const read of sceneBus.occluders) {
-      const r = read()
-      if (r) occ.add({ x0: r.left, y0: r.top, x1: r.right, y1: r.bottom })
+    // HUD rects are read at 10 Hz: getBoundingClientRect after this frame's transform writes would
+    // force a layout every frame.
+    const oc = occluderCache.current
+    if (performance.now() - oc.at > REPO.reselectMs) {
+      oc.at = performance.now()
+      oc.rects = []
+      for (const read of sceneBus.occluders) {
+        const r = read()
+        if (r && r.width > 0) oc.rects.push({ x0: r.left, y0: r.top, x1: r.right, y1: r.bottom })
+      }
     }
+    for (const r of oc.rects) occ.add(r)
     const screenOf = (i: number) => {
       const [x, y, z] = positionAt(g.attrs, i, layout, scratch)
       return projectPoint(m, x, y, z)
@@ -179,6 +192,13 @@ export function Labels({ galaxy }: { galaxy: GalaxyIndex }) {
     if (now - repoState.lastPick > REPO.reselectMs) {
       repoState.lastPick = now
       repoState.candidates = want > 0 ? rankRepos(g, m, size, layout, forced, s.lens.state === 'ready' ? s.lens.weights : null) : []
+    } else if (!repoState.recheck) {
+      // Under frameloop 'demand' the frame after the camera rests may be the last one; schedule
+      // another so the ranking catches up with where it stopped.
+      repoState.recheck = setTimeout(() => {
+        repoState.recheck = 0
+        sceneBus.invalidate()
+      }, REPO.reselectMs)
     }
     for (const i of repoState.candidates) {
       if (repoPlaced.size >= want + forced.length) break
@@ -318,12 +338,18 @@ function rankRepos(
 
 function writeRepoSlots(
   g: GalaxyIndex,
-  st: { slotOf: Map<number, number>; starOf: (number | null)[]; alpha: number[]; width: Map<number, number> },
+  st: { slotOf: Map<number, number>; starOf: (number | null)[]; alpha: number[]; width: Map<number, number>; pool: HTMLElement[] | null },
   placed: Map<number, number>,
   screenOf: (i: number) => ReturnType<typeof projectPoint>,
   fade: (cur: number, target: number) => number,
 ) {
   const slots = sceneBus.repoLabelSlots
+  if (st.pool !== slots) {
+    st.pool = slots
+    st.slotOf.clear()
+    st.starOf = []
+    st.alpha = []
+  }
   if (slots.length === 0) return
   // Keep a star in the slot it already owns, so its label fades rather than jumping between nodes.
   for (const [star, slot] of st.slotOf) {

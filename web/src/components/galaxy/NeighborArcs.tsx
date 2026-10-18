@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { Line } from '@react-three/drei'
 import { useFrame } from '@react-three/fiber'
-import { Color, Vector3 } from 'three'
+import { Vector3 } from 'three'
 import type { Line2 } from 'three-stdlib'
 import type { GalaxyIndex } from '#/lib/load'
 import { positionAt } from '#/lib/layout'
@@ -12,11 +12,13 @@ const SEGMENTS = 20
 const FADE_S = 0.15
 const STAGGER_S = 0.04
 const FLOW_SPEED = 0.5
-// Above 1 so arcs cross the bloom threshold and glow like the stars they join.
-const ARC_TINT = new Color(1.4, 1.4, 1.4)
-const FLOW_TINT = new Color(2.4, 2.4, 2.4)
+// Above 1 so arcs cross the bloom threshold and glow like the stars they join. Baked into the
+// vertex colours: drei's Line forces its colour to white whenever vertexColors is set.
+const ARC_GAIN = 1.4
+const FLOW_GAIN = 2.4
 
-type Arc = { j: number; cos: number; rank: number; points: Vector3[]; colors: [number, number, number][] }
+type RGB = [number, number, number]
+type Arc = { j: number; cos: number; rank: number; points: Vector3[]; colors: RGB[]; flowColors: RGB[] }
 
 /** Quadratic arc bowed toward the viewer: control = mid + normalize(view × (b − a)) · |b − a| · 0.25. */
 export function arcPoints(a: Vector3, b: Vector3, viewDir: Vector3, segments = SEGMENTS): Vector3[] {
@@ -50,7 +52,8 @@ function buildArcs(g: GalaxyIndex, i: number, flat: number): Arc[] {
       const w = 0.55 * (1 - t)
       return [0, 1, 2].map((c) => (src[c]! * (1 - t) + dst[c]! * t) * (1 - w) + w) as [number, number, number]
     })
-    return { j, cos, rank, points, colors }
+    const gain = (k: number) => colors.map((c) => c.map((v) => v * k) as RGB)
+    return { j, cos, rank, points, colors: gain(ARC_GAIN), flowColors: gain(FLOW_GAIN) }
   })
 }
 
@@ -112,7 +115,6 @@ export function NeighborArcs({ galaxy }: { galaxy: GalaxyIndex }) {
               ref={(l) => void (lines.current[k] = l as unknown as Line2 | null)}
               points={arc.points}
               vertexColors={arc.colors}
-              color={ARC_TINT}
               lineWidth={width}
               transparent
               opacity={0}
@@ -122,8 +124,7 @@ export function NeighborArcs({ galaxy }: { galaxy: GalaxyIndex }) {
             <Line
               ref={(l) => void (flows.current[k] = l as unknown as Line2 | null)}
               points={arc.points}
-              vertexColors={arc.colors}
-              color={FLOW_TINT}
+              vertexColors={arc.flowColors}
               lineWidth={width * 1.6}
               dashed
               dashSize={0.06}
