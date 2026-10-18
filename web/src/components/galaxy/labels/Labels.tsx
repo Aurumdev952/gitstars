@@ -6,7 +6,7 @@ import type { ClusterNode, GalaxyIndex } from '#/lib/load'
 import { sceneTheme } from '#/lib/theme'
 import { labelReveal } from '#/lib/intro'
 import { Occupancy, clusterSlots, hysteresis, place, starSlots, type LabelBox, type Rect, type Slot } from '#/lib/labelLayout'
-import { positionAt, starPixelRadius, type StarSizeUniforms } from '#/lib/layout'
+import { bornAt, positionAt, starPixelRadius, type StarSizeUniforms } from '#/lib/layout'
 import { projectPoint, type Projector, type ScreenPoint } from '#/lib/picking'
 import { useGalaxyStore } from '#/state/store'
 import { currentLayout, currentProjector, sceneBus } from '../sceneBus'
@@ -188,6 +188,7 @@ export function Labels({ galaxy }: { galaxy: GalaxyIndex }) {
     repoPlaced.clear()
     const placeRepo = (i: number) => {
       if (s.filtered && !s.filtered.visible[i]) return
+      if (layout.timelineOn && bornAt(g.attrs, i, layout) < 0.5) return
       const p = screenOf(i)
       if (!p) return
       const w = repoState.width.get(i) ?? estimateWidth(g.repos[i]!.fullName)
@@ -215,7 +216,8 @@ export function Labels({ galaxy }: { galaxy: GalaxyIndex }) {
       const inside = Math.min(1, Math.max(0, (l.key / Math.max(1, l.node.radius) - 1.1) / 1.4))
       const shown = inside > 0.05 && placeCluster(l, texts.current.get(l), o, m, flat)
       const emphasis = (s.hoveredCluster === null ? 0.86 : s.hoveredCluster === l.node.id ? 1 : 0.4) * lensDim
-      l.alpha = fade(l.alpha, shown ? inside * emphasis * reveal(l.order) : 0)
+      const born = layout.timelineOn ? bornShare(u.uGalaxyBorn.value[l.node.index] ?? 1) : 1
+      l.alpha = fade(l.alpha, shown && born > 0 ? inside * emphasis * reveal(l.order) * born : 0)
     }
 
     // System labels once a system spans enough of the screen, largest first, at most 25.
@@ -223,7 +225,8 @@ export function Labels({ galaxy }: { galaxy: GalaxyIndex }) {
     const sized = bySize.current
     sized.length = 0
     for (const l of systems) {
-      l.key = labelsOn ? projectedRadius(l.node, flat, m, cam) : 0
+      const born = layout.timelineOn ? (sceneBus.systemBorn[l.node.index] ?? 1) : 1
+      l.key = labelsOn && born > 0.05 ? projectedRadius(l.node, flat, m, cam) : 0
       l.shown = hysteresis(l.shown, l.key, SYSTEM.onPx, SYSTEM.offPx)
       l.placed = false
       if (l.shown) sized.push(l)
@@ -475,3 +478,6 @@ function writeRepoSlots(
     el.style.transform = `translate3d(${Math.round(p.x + dx)}px, ${Math.round(p.y + dy)}px, 0)`
   }
 }
+
+/** A cluster's name arrives with its first births and is fully lit once a quarter has been born. */
+const bornShare = (share: number) => Math.min(1, share / 0.25)

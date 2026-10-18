@@ -152,6 +152,8 @@ export function CameraRig() {
       c &&
       !s.frozen &&
       s.settings.autorotate &&
+      // Timeline playback turns the camera itself.
+      !s.timeline.playing &&
       s.settings.motion === 'full' &&
       // The azimuth setter bypasses camera-controls' clamps, so it would tip the flat map edge-on.
       s.view === '3d' &&

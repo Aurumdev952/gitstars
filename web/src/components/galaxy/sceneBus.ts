@@ -44,6 +44,8 @@ export const sceneBus = {
   homeDistance: 0,
   /** What uWarp eases toward; the Director raises it for the length of a long flight. */
   warpTarget: 0,
+  /** Per system, the share of members the timeline has born (1 with it closed); labels fade with it. */
+  systemBorn: new Float32Array(0),
 }
 
 export function currentLayout(): LayoutUniforms {

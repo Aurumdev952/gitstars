@@ -44,6 +44,8 @@ export function createSceneUniforms() {
     uFocusAmt: u(0),
     /** Per galaxy, the fraction of its members that pass the filters (nebulae thin out with it). */
     uGalaxyVis: u(new Float32Array(MAX_GALAXIES).fill(1)),
+    /** Per galaxy, the share of its members the timeline has born; nebulae gather with it. */
+    uGalaxyBorn: u(new Float32Array(MAX_GALAXIES).fill(1)),
   }
 }
 

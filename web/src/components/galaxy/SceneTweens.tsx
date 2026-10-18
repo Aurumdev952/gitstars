@@ -2,6 +2,9 @@ import { useEffect, useRef } from 'react'
 import { useFrame } from '@react-three/fiber'
 import { useGalaxyStore } from '#/state/store'
 import { MAX_GALAXIES } from '#/shaders/uniforms'
+import { bornAt } from '#/lib/layout'
+import type { GalaxyIndex } from '#/lib/load'
+import { currentLayout } from './sceneBus'
 import { sceneBus } from './sceneBus'
 
 const LAMBDA = 6
@@ -17,6 +20,7 @@ export function SceneTweens() {
   const flat = useRef({ from: 0, to: 0, t: 1 })
   const galaxyVis = useRef(new Float32Array(MAX_GALAXIES).fill(1))
   const hasWeights = useRef(false)
+  const bornKey = useRef<{ g: GalaxyIndex | null; t: number }>({ g: null, t: NaN })
 
   useEffect(() => {
     const store = useGalaxyStore
@@ -96,6 +100,13 @@ export function SceneTweens() {
     const vis = u.uGalaxyVis.value
     for (let i = 0; i < vis.length; i++) vis[i] = damp(vis[i]!, galaxyVis.current[i]!)
 
+    // Births per cluster, recomputed only when the timeline cursor moves.
+    const key = u.uTimelineOn.value > 0.5 ? u.uTimeline.value : -1
+    if (g && (bornKey.current.g !== g || bornKey.current.t !== key)) {
+      bornKey.current = { g, t: key }
+      writeBornShares(g, key >= 0, u.uGalaxyBorn.value)
+    }
+
     const f = flat.current
     if (f.t < 1) {
       const instant = s.frozen || s.settings.motion === 'reduced'
@@ -107,4 +118,23 @@ export function SceneTweens() {
   }, -0.75)
 
   return null
+}
+
+function writeBornShares(g: GalaxyIndex, on: boolean, galaxy: Float32Array) {
+  const sys = sceneBus.systemBorn.length === g.systems.length ? sceneBus.systemBorn : new Float32Array(g.systems.length)
+  galaxy.fill(1)
+  sys.fill(1)
+  if (on) {
+    const layout = currentLayout()
+    const gSum = new Float32Array(g.galaxies.length)
+    const sSum = new Float32Array(g.systems.length)
+    for (let i = 0; i < g.n; i++) {
+      const b = bornAt(g.attrs, i, layout)
+      gSum[g.galaxyOf[i]!]! += b
+      sSum[g.systemOf[i]!]! += b
+    }
+    for (const c of g.galaxies) if (c.index < galaxy.length) galaxy[c.index] = gSum[c.index]! / Math.max(1, c.members.length)
+    for (const c of g.systems) sys[c.index] = sSum[c.index]! / Math.max(1, c.members.length)
+  }
+  sceneBus.systemBorn = sys
 }

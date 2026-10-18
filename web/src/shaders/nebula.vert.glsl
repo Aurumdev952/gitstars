@@ -11,6 +11,7 @@ uniform float uFocusAmt;
 uniform float uNebula;
 uniform float uLens;
 uniform float uGalaxyVis[32];
+uniform float uGalaxyBorn[32];
 
 #include <gs_layout>
 
@@ -35,7 +36,8 @@ void main() {
   vUv = position.xy;
   vColor = aColor;
   vSeed = aSeed;
-  float members = uGalaxyVis[int(clamp(aCluster, 0.0, 31.0))];
+  int gi = int(clamp(aCluster, 0.0, 31.0));
+  float members = uGalaxyVis[gi] * uGalaxyBorn[gi];
   // Each cloud gathers as its anchor star lands at the end of the intro.
   float landed = smoothstep(0.7, 1.0, gsIntroT(aDelay));
   vAlpha = near * focused * uNebula * members * landed * (1.0 - 0.75 * uLens);
