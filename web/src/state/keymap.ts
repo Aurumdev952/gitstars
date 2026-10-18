@@ -10,15 +10,20 @@ export type Binding = {
   run: (e: KeyboardEvent) => void
   /** Runs even while a text field has focus. */
   global?: boolean
+  /** False keeps a binding out of the shortcuts dialog when another row already lists it. */
+  help?: boolean
 }
 
 const plain = (key: string) => (e: KeyboardEvent) => e.key === key && !e.metaKey && !e.ctrlKey && !e.altKey
 const arrow = { ArrowLeft: 'left', ArrowRight: 'right', ArrowUp: 'up', ArrowDown: 'down' } as const
 
-/** The single source for keyboard behaviour and the shortcuts dialog. */
+/**
+ * The single source for keyboard behaviour and the shortcuts dialog. Every `run` reads `commands`
+ * at call time: the bundle may evaluate this table before the commands module has initialised.
+ */
 export const KEYMAP: Binding[] = [
   {
-    keys: ['⌘', 'K'],
+    keys: ['⌘', 'K', 'or', '/'],
     label: 'Search your stars',
     group: 'Search',
     match: (e) => (e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k',
@@ -28,12 +33,12 @@ export const KEYMAP: Binding[] = [
     },
     global: true,
   },
-  { keys: ['/'], label: 'Search', group: 'Search', match: plain('/'), run: commands.openPalette },
-  { keys: ['r'], label: 'Forgotten star', group: 'Search', match: plain('r'), run: commands.forgottenStar },
-  { keys: ['Esc'], label: 'Step out: star, cluster, lens, search', group: 'Navigate', match: plain('Escape'), run: commands.stepOut },
+  { keys: ['/'], label: 'Search', group: 'Search', match: plain('/'), run: () => commands.openPalette(), help: false },
+  { keys: ['r'], label: 'Forgotten star', group: 'Search', match: plain('r'), run: () => commands.forgottenStar() },
+  { keys: ['Esc'], label: 'Step out a level', group: 'Navigate', match: plain('Escape'), run: () => commands.stepOut() },
   {
     keys: ['←', '↑', '→', '↓'],
-    label: 'Nearest star in that direction (or orbit)',
+    label: 'Nearest star that way',
     group: 'Navigate',
     match: (e) => e.key in arrow && !e.metaKey && !e.ctrlKey && useGalaxyStore.getState().view !== 'list',
     run: (e) => {
@@ -52,10 +57,10 @@ export const KEYMAP: Binding[] = [
     match: (e) => /^[1-9]$/.test(e.key) && !e.metaKey && !e.ctrlKey && !e.altKey,
     run: (e) => commands.focusGalaxy(Number(e.key) - 1),
   },
-  { keys: ['g'], label: 'Home', group: 'Navigate', match: plain('g'), run: commands.home },
-  { keys: ['f'], label: 'Flat map', group: 'View', match: plain('f'), run: commands.toggleFlat },
-  { keys: ['l'], label: 'List view', group: 'View', match: plain('l'), run: commands.toggleList },
-  { keys: ['?'], label: 'Keyboard shortcuts', group: 'View', match: plain('?'), run: commands.openShortcuts },
+  { keys: ['g'], label: 'Home', group: 'Navigate', match: plain('g'), run: () => commands.home() },
+  { keys: ['f'], label: 'Flat map', group: 'View', match: plain('f'), run: () => commands.toggleFlat() },
+  { keys: ['l'], label: 'List view', group: 'View', match: plain('l'), run: () => commands.toggleList() },
+  { keys: ['?'], label: 'Keyboard shortcuts', group: 'View', match: plain('?'), run: () => commands.openShortcuts() },
 ]
 
 const typing = (t: EventTarget | null) =>

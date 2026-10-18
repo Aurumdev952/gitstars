@@ -28,6 +28,7 @@ export function CameraRig() {
     const c = ref.current
     if (!c || !galaxy) return
     sceneBus.controls = c
+    sceneBus.director = director
     c.maxDistance = galaxy.radius * 5
     const onStart = () => {
       lastInput.current = performance.now()
@@ -103,6 +104,7 @@ export function CameraRig() {
       unsubView()
       unsubMotion()
       sceneBus.controls = null
+      sceneBus.director = null
     }
   }, [galaxy])
 

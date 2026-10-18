@@ -6,6 +6,7 @@ import { GalaxyLoadError, loadGalaxy, resolveDataSource } from '#/lib/load'
 import { useGalaxyStore } from '#/state/store'
 import { bindNavigate, filtersFromSearch, searchDefaults, searchSchema } from '#/state/url'
 import { startSearchRunner, warmModel } from '#/workers/searchClient'
+import { seedDiscovery } from '#/state/commands'
 
 // three, R3F and the post chain load in their own chunk, in parallel with galaxy.json.
 const GalaxyCanvas = lazy(() => import('#/components/galaxy/GalaxyCanvas'))
@@ -57,12 +58,13 @@ function Home() {
       focusCluster,
       view: search.view,
       frozen: search.freeze,
-      seed: search.seed ?? null,
       query: search.q ?? null,
       lensQuery: search.lens ?? null,
       filters: filtersFromSearch(search),
     })
   }, [galaxy, search])
+
+  useEffect(() => seedDiscovery(search.seed ?? null), [search.seed])
 
   return (
     <main className="h-full">

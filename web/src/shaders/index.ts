@@ -1,7 +1,3 @@
-import { Vector2, Vector3 } from 'three'
-import { sceneTheme } from '#/lib/theme'
-import { RESTING_LAYOUT } from '#/lib/layout'
-import { LENS_RAMP } from '#/lib/lens'
 import layout from './chunks/layout.glsl?raw'
 import fog from './chunks/fog.glsl?raw'
 import noise from './chunks/noise.glsl?raw'
@@ -39,43 +35,3 @@ export const shaders = {
   dust: { vertexShader: resolveIncludes(dustVert), fragmentShader: resolveIncludes(dustFrag) },
   nebula: { vertexShader: resolveIncludes(nebulaVert), fragmentShader: resolveIncludes(nebulaFrag) },
 }
-
-const u = <T>(value: T) => ({ value })
-
-export const MAX_GALAXIES = 32
-
-/** One shared uniform set: star, dust, nebula and later line materials read layout and time from it. */
-export function createSceneUniforms() {
-  const { fog, stars } = sceneTheme
-  return {
-    uTime: u(0),
-    uViewport: u(new Vector2(1, 1)),
-    uPixelRatio: u(1),
-    uSizeScale: u<number>(stars.sizeScale),
-    uMinPx: u<number>(stars.minPx),
-    uMaxPx: u<number>(stars.maxPx),
-    uFlat: u(RESTING_LAYOUT.flat),
-    uIntro: u(RESTING_LAYOUT.intro),
-    uIntroOrigin: u(new Vector3(...RESTING_LAYOUT.introOrigin)),
-    uTimeline: u(RESTING_LAYOUT.timeline),
-    uTimelineOn: u(0),
-    uBirthWindow: u(RESTING_LAYOUT.birthWindow),
-    uFogNear: u<number>(fog.near),
-    uFogFar: u<number>(fog.far),
-    uFogColor: u(new Vector3(...fog.color)),
-    uFocusDist: u(100),
-    uBokeh: u(0),
-    uTwinkle: u(1),
-    uCamVel: u(new Vector3()),
-    uWarp: u(0),
-    uLens: u(0),
-    uLensRamp: u(LENS_RAMP.map((c) => new Vector3(...c))),
-    /** Nebula focus: the galaxy index to keep, and how strongly the others fade. */
-    uFocusCluster: u(-1),
-    uFocusAmt: u(0),
-    /** Per galaxy, the fraction of its members that pass the filters (nebulae thin out with it). */
-    uGalaxyVis: u(new Float32Array(MAX_GALAXIES).fill(1)),
-  }
-}
-
-export type SceneUniforms = ReturnType<typeof createSceneUniforms>

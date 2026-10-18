@@ -37,8 +37,6 @@ export type UrlMirror = {
   focusCluster: string | null
   view: View
   frozen: boolean
-  /** `?seed`: makes the Forgotten-star draw reproducible. */
-  seed: number | null
   query: string | null
   lensQuery: string | null
   filters: Filters
@@ -94,7 +92,6 @@ export const useGalaxyStore = create<GalaxyStore>()(
     focusCluster: null,
     view: '3d',
     frozen: false,
-    seed: null,
     query: null,
     lensQuery: null,
     filters: NO_FILTERS,

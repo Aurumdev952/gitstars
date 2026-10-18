@@ -27,5 +27,25 @@ export default defineConfig({
   server: { port: 3000, strictPort: true },
   optimizeDeps: { exclude: ['@huggingface/transformers'] },
   worker: { format: 'es' },
+  build: {
+    rolldownOptions: {
+      output: {
+        // The scene's libraries load as their own cached chunks, after the HUD shell and in
+        // parallel with galaxy.json; the HUD never imports three.
+        codeSplitting: {
+          // Groups pull in their libraries' dependencies, so React and zustand get their own
+          // higher-priority group; otherwise scene-libs would capture them and load eagerly.
+          groups: [
+            { name: 'react', test: /node_modules[\\/](react|react-dom|scheduler|zustand|use-sync-external-store)[\\/]/, priority: 4 },
+            { name: 'three', test: /node_modules[\\/]three[\\/]/, priority: 3 },
+            { name: 'scene-libs', test: /node_modules[\\/](@react-three|three-stdlib|postprocessing|camera-controls|troika-|maath|@monogrid|three-mesh-bvh)/, priority: 2 },
+            { name: 'ui-libs', test: /node_modules[\\/](radix-ui|@radix-ui|cmdk|motion|framer-motion|motion-dom|motion-utils|lucide-react|@tanstack[\\/]react-virtual)/, priority: 1 },
+          ],
+        },
+      },
+    },
+    // three.module alone minifies to about 700 kB; it is one cached, lazily loaded chunk.
+    chunkSizeWarningLimit: 760,
+  },
   plugins: [crossOriginIsolation(), tailwindcss(), tanstackStart({ spa: { enabled: true } }), viteReact()],
 })

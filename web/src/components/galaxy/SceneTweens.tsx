@@ -1,7 +1,7 @@
 import { useEffect, useRef } from 'react'
 import { useFrame } from '@react-three/fiber'
 import { useGalaxyStore } from '#/state/store'
-import { MAX_GALAXIES } from '#/shaders'
+import { MAX_GALAXIES } from '#/shaders/uniforms'
 import { sceneBus } from './sceneBus'
 
 const LAMBDA = 6

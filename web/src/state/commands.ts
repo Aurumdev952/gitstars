@@ -1,4 +1,3 @@
-import { director } from '#/components/galaxy/Director'
 import { sceneBus, starScreenPosition } from '#/components/galaxy/sceneBus'
 import { pickForgotten } from '#/lib/discovery'
 import { NO_FILTERS } from '#/lib/filters'
@@ -15,14 +14,11 @@ const seen = new Set<number>()
 let rand: () => number = Math.random
 let neighborCycle: { origin: number; k: number; landed: number } | null = null
 
-useGalaxyStore.subscribe(
-  (s) => s.seed,
-  (seed) => {
-    rand = seed === null ? Math.random : mulberry32(seed)
-    seen.clear()
-  },
-  { fireImmediately: true },
-)
+/** `?seed` makes the Forgotten-star draw reproducible for screenshots and tests. */
+export function seedDiscovery(seed: number | null) {
+  rand = seed === null ? Math.random : mulberry32(seed)
+  seen.clear()
+}
 
 /** The list `[` and `]` walk: search hits, else the focused cluster's members by stars. */
 function currentList(): number[] {
@@ -57,7 +53,7 @@ export const commands = {
   home() {
     const s = get()
     if (s.selected !== null || s.focusCluster !== null) navigateSearch({ repo: undefined, cluster: undefined })
-    else void director.home()
+    else void sceneBus.director?.home()
   },
 
   toggleFlat: () => get().actions.setView(get().view === 'flat' ? '3d' : 'flat'),

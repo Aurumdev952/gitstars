@@ -28,7 +28,8 @@ export function SceneDriver() {
     u.uTime.value = s.frozen ? FROZEN_TIME : u.uTime.value + dt
     u.uTwinkle.value = still ? 0 : 1
     u.uPixelRatio.value = state.viewport.dpr
-    u.uViewport.value.set(state.size.width * state.viewport.dpr, state.size.height * state.viewport.dpr)
+    u.uViewport.value.x = state.size.width * state.viewport.dpr
+    u.uViewport.value.y = state.size.height * state.viewport.dpr
     sceneBus.size.width = state.size.width
     sceneBus.size.height = state.size.height
     state.camera.updateMatrixWorld()

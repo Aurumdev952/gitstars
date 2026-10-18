@@ -5,7 +5,7 @@ import { commands } from '#/state/commands'
 import { activeFacets } from '#/lib/filters'
 import { matchClusters } from '#/lib/search'
 import { formatCompact, splitFullName } from '#/lib/format'
-import { director } from '#/components/galaxy/Director'
+import { sceneBus } from '#/components/galaxy/sceneBus'
 import { warmModel } from '#/workers/searchClient'
 import { Command, CommandGroup, CommandInput, CommandItem, CommandList } from '#/components/ui/command'
 import { Dialog, DialogContent, DialogTitle } from '#/components/ui/dialog'
@@ -27,18 +27,18 @@ export function SearchPalette() {
   useEffect(() => {
     if (open) {
       committed.current = false
-      director.saveView()
+      sceneBus.director?.saveView()
       warmModel()
       return
     }
     // Cancelling after arrow-key previews puts the camera back on the hits, or where it started.
     const s = useGalaxyStore.getState()
     s.actions.hover(null)
-    if (committed.current || !director.isPreviewing()) return director.forgetView()
+    if (committed.current || !sceneBus.director?.isPreviewing()) return sceneBus.director?.forgetView()
     if (s.hits && s.hits.frame.length > 0) {
-      director.forgetView()
-      void director.frameIndices(s.hits.frame)
-    } else void director.restoreView()
+      sceneBus.director?.forgetView()
+      void sceneBus.director?.frameIndices(s.hits.frame)
+    } else void sceneBus.director?.restoreView()
   }, [open])
 
   const close = (how: 'commit' | 'cancel') => {
@@ -126,7 +126,7 @@ function PaletteBody({ onClose }: { onClose: (how: 'commit' | 'cancel') => void 
     const i = Number(m[1])
     previewTimer.current = setTimeout(() => {
       hover(i)
-      void director.preview(i)
+      void sceneBus.director?.preview(i)
     }, PREVIEW_DEBOUNCE_MS)
   }
 

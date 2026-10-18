@@ -46,6 +46,8 @@ function boundingSphere(indices: Iterable<number>, pad = 1.1, minRadius = 8, qua
   return new Sphere(center, Math.max(minRadius, r * pad))
 }
 
+export type Director = typeof director
+
 export const director = {
   async home(animate = true) {
     const c = sceneBus.controls
