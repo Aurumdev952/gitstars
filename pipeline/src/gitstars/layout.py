@@ -10,12 +10,20 @@ import numpy as np
 from gitstars.context import Ctx
 from gitstars.naming import ctfidf_names, repo_terms
 
-LAYOUT_VERSION = 2
+LAYOUT_VERSION = 3
+# HDBSCAN on the 10-d UMAP. 12 left mixed systems (screen recorders inside a notes-and-AI-assistants system);
+# at 8, the extra splits keep 90% of 8-NN edges inside one part, against 56% for a random split of the same sizes.
+MIN_CLUSTER_SIZE = 8
+MIN_SAMPLES = 5
+VOTE_K = 15
+HOME_SHARE = 0.5
+VOTE_ROUNDS = 50
 # Galaxy label as a weak UMAP target pulls galaxies apart; 0.3 measured the same kNN recall as unsupervised.
 GALAXY_TARGET_WEIGHT = 0.3
 # Galaxies are then inflated about their centroids until, for 75% of them, the gap to the nearest other galaxy
-# centroid is at least 1.5x the sum of both mean radii. Supervised UMAP alone packs each galaxy into a dot.
-GALAXY_GAP = 1.5
+# centroid is at least 1.7x the sum of both mean radii. Supervised UMAP alone packs each galaxy into a dot.
+# 1.5 sufficed for 12 galaxies; the 13 from the finer systems needed 1.7 to keep centroid distance / radius above 7.2.
+GALAXY_GAP = 1.7
 GALAXY_GAP_QUANTILE = 0.25
 SEED = 42
 NEIGHBORS = 8
@@ -57,17 +65,42 @@ def top_neighbors(vectors: np.ndarray, k: int = NEIGHBORS) -> list[list[tuple[in
     return out
 
 
-def attach_noise(labels: np.ndarray, vectors: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
-    """HDBSCAN noise (-1) joins the system with the nearest centroid (cosine), flagged as an outlier."""
-    outlier = labels < 0
-    ids = sorted(set(labels[~outlier].tolist()))
-    if not ids:
-        return np.zeros_like(labels), np.ones_like(outlier)
-    centroids = np.stack([vectors[labels == c].mean(axis=0) for c in ids])
-    centroids /= np.linalg.norm(centroids, axis=1, keepdims=True)
-    nearest = np.asarray(ids)[np.argmax(vectors[outlier] @ centroids.T, axis=1)]
+def _tally(neighbor_labels: np.ndarray, weights: np.ndarray, n_labels: int) -> tuple[np.ndarray, np.ndarray]:
+    """Per row, the label with the most neighbour weight and its share of the row's total weight."""
+    score = np.zeros((len(neighbor_labels), n_labels))
+    np.add.at(score, (np.arange(len(neighbor_labels))[:, None], neighbor_labels), weights)
+    win = score.argmax(axis=1)
+    return win, score[np.arange(len(win)), win] / weights.sum(axis=1)
+
+
+def vote_noise(labels: np.ndarray, vectors: np.ndarray, k: int = VOTE_K, home: float = HOME_SHARE) -> tuple[np.ndarray, np.ndarray]:
+    """HDBSCAN noise (-1) joins the system its k nearest repos vote for, weighted by cosine: first over clustered
+    repos, then over all repos until labels settle, so a run of noise inherits from the system it trails off. The
+    nearest centroid misleads for wide systems, whose centroid is far even from their own edge. Noise whose winner
+    holds less than `home` of the vote weight has no clear home and stays an outlier."""
+    noise = labels < 0
+    rows, core = np.where(noise)[0], np.where(~noise)[0]
+    if not len(core):
+        return np.zeros_like(labels), noise
+    if not len(rows):
+        return labels.copy(), noise
+    n_labels = int(labels.max()) + 1
+    sims = vectors[rows] @ vectors.T
+    sims[np.arange(len(rows)), rows] = -np.inf
+    kc = min(k, len(core))
+    seed = core[np.argpartition(-sims[:, core], kth=kc - 1, axis=1)[:, :kc]]
     out = labels.copy()
-    out[outlier] = nearest
+    out[rows], share = _tally(labels[seed], np.take_along_axis(sims, seed, axis=1), n_labels)
+    ka = min(k, len(labels) - 1)
+    nb = np.argpartition(-sims, kth=ka - 1, axis=1)[:, :ka]
+    weights = np.take_along_axis(sims, nb, axis=1)
+    for _ in range(VOTE_ROUNDS):
+        win, share = _tally(out[nb], weights, n_labels)
+        if (win == out[rows]).all():
+            break
+        out[rows] = win
+    outlier = np.zeros_like(noise)
+    outlier[rows] = share < home
     return out, outlier
 
 
@@ -131,13 +164,13 @@ def place(vectors: np.ndarray, galaxy: np.ndarray, dims: int) -> np.ndarray:
     return normalize_positions(separate_galaxies(reducer.fit_transform(vectors, y=galaxy), galaxy))
 
 
-def compute(vectors: np.ndarray, names: list[str], min_cluster_size: int = 12, min_samples: int = 5) -> Layout:
+def compute(vectors: np.ndarray, names: list[str]) -> Layout:
     import umap
     from sklearn.cluster import HDBSCAN
 
     reduced = umap.UMAP(n_components=10, metric="cosine", n_neighbors=15, min_dist=0.0, random_state=SEED).fit_transform(vectors)
-    labels = HDBSCAN(min_cluster_size=min_cluster_size, min_samples=min_samples).fit_predict(reduced)
-    system, outlier = attach_noise(labels, vectors)
+    labels = HDBSCAN(min_cluster_size=MIN_CLUSTER_SIZE, min_samples=MIN_SAMPLES).fit_predict(reduced)
+    system, outlier = vote_noise(labels, vectors)
     gal = galaxies_for(system, vectors)
     galaxy = np.array([gal[s] for s in system.tolist()])
     return Layout(

@@ -1,6 +1,6 @@
 import numpy as np
 
-from gitstars.layout import Layout, assign_ids, attach_noise, normalize_positions, top_neighbors
+from gitstars.layout import Layout, assign_ids, normalize_positions, top_neighbors, vote_noise
 from gitstars.naming import ctfidf
 
 
@@ -28,11 +28,42 @@ def test_top_neighbors_exact_sorted_without_self():
     assert nb[0][0][1] >= nb[0][1][1]
 
 
-def test_attach_noise_to_nearest_centroid():
-    v = unit([[1, 0], [0.95, 0.05], [0, 1], [0.05, 0.95], [0.9, 0.2]])
-    labels = np.array([0, 0, 1, 1, -1])
-    system, outlier = attach_noise(labels, v)
-    assert system.tolist() == [0, 0, 1, 1, 0] and outlier.tolist() == [False] * 4 + [True]
+def at_degrees(*deg):
+    return np.column_stack([np.cos(np.radians(deg)), np.sin(np.radians(deg))]).astype(np.float32)
+
+
+def test_vote_noise_follows_neighbours_where_the_nearest_centroid_is_wrong():
+    # System 0 is wide (0..60 degrees, centroid at 30), system 1 is tight (82..92, centroid at 87). Noise at 64
+    # sits beside system 0's edge but is closer to system 1's centroid.
+    a, b = list(range(0, 61, 6)), list(range(82, 93, 2))
+    v = at_degrees(*a, *b, 64)
+    labels = np.array([0] * len(a) + [1] * len(b) + [-1])
+    cents = np.stack([v[labels == c].mean(0) for c in (0, 1)])
+    assert int(np.argmax(cents @ v[-1])) == 1, "setup: the nearest centroid is system 1"
+    system, outlier = vote_noise(labels, v, k=3)
+    assert system[-1] == 0, "the vote of its nearest repos puts it in system 0"
+    assert system[:-1].tolist() == labels[:-1].tolist(), "clustered repos keep their system"
+    assert not outlier.any(), "a unanimous vote is a clear home"
+
+
+def test_vote_noise_lets_a_trail_of_noise_inherit_from_the_system_it_leaves():
+    # A run of noise leaves system 0 (0..10 degrees) towards system 1 (50..60); its tip is nearer system 1's repos.
+    a, b, trail = list(range(0, 11, 2)), list(range(50, 61, 2)), [13, 17, 21, 25, 29, 33]
+    v = at_degrees(*a, *b, *trail)
+    labels = np.array([0] * len(a) + [1] * len(b) + [-1] * len(trail))
+    system, outlier = vote_noise(labels, v, k=3)
+    assert system[-len(trail) :].tolist() == [0] * len(trail)
+    assert not outlier.any()
+
+
+def test_vote_noise_keeps_a_split_vote_flagged_as_an_outlier():
+    # Two repos per axis, placed so all six are equally close to the noise point on the diagonal.
+    eye = np.eye(3)
+    v = unit([eye[c] + s * 0.05 * (eye[(c + 1) % 3] - eye[(c + 2) % 3]) for c in range(3) for s in (1, -1)] + [[1, 1, 1]])
+    labels = np.array([0, 0, 1, 1, 2, 2, -1])
+    system, outlier = vote_noise(labels, v, k=6)
+    assert outlier.tolist() == [False] * 6 + [True], "a third of the vote is no home"
+    assert system[-1] in (0, 1, 2)
 
 
 def test_assign_ids_orders_by_size():

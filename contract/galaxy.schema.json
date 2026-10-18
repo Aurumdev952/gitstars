@@ -119,7 +119,7 @@
           "pos2": { "$ref": "#/$defs/vec2" },
           "galaxyId": { "type": "string" },
           "systemId": { "type": "string" },
-          "outlier": { "type": "boolean", "description": "HDBSCAN noise point attached to the nearest system." },
+          "outlier": { "type": "boolean", "description": "HDBSCAN noise point whose nearest neighbours gave no system a majority; it sits in the system with the most votes." },
           "neighbors": {
             "type": "array",
             "maxItems": 8,
