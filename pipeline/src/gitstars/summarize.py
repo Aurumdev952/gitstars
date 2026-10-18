@@ -14,8 +14,8 @@ from rich.progress import Progress
 from gitstars import decider as dec
 from gitstars.cards import load_card, load_gate
 from gitstars.config import openrouter_key
-from gitstars.context import Ctx
-from gitstars.domain import Card, JudgeVerdict, Repo
+from gitstars.context import Ctx, sha
+from gitstars.domain import JudgeVerdict, Repo
 from gitstars.extract import assemble
 from gitstars.llm import local, openrouter
 from gitstars.llm.openrouter import ChatTransport, FatalProviderError, TransportError, read_quota
@@ -26,7 +26,8 @@ from gitstars.tokens import count_tokens
 
 SUMMARY_VERSION = 1
 MAX_JUDGE_RETRIES = 2
-MAX_MODEL_HOPS = 3
+# Free upstreams 429 often (22 of 66 requests in the first 30-repo run); a 429 is cheap, so hop further.
+MAX_MODEL_HOPS = 6
 WORST_CASE_REQUESTS_PER_REPO = (1 + MAX_JUDGE_RETRIES) * 2
 BATCH_SIZE = 30
 
@@ -68,7 +69,7 @@ async def _generate(state: RunState, ctx: Ctx, repo: Repo, card_text: str, feedb
         try:
             summary = await _complete_and_parse(state, slot, messages)
         except TransportError as exc:
-            state.pool.release(slot, False, exc.retry_after)
+            state.pool.release(slot, False, exc.retry_after, disable=exc.permanent)
             ctx.db.log_llm_call(repo.full_name, state.provider, slot.id, f"error: {exc}"[:200], time.monotonic() - t0)
             continue
         except FatalProviderError:
@@ -122,9 +123,38 @@ def _better(a: Attempt | None, b: Attempt) -> Attempt:
     return b if kb > ka else a
 
 
-async def summarize_repo(state: RunState, ctx: Ctx, repo: Repo, card: Card, card_sha: str) -> None:
-    gate = load_gate(ctx.db, repo, card_sha)
-    card_text = assemble(card, gate, count_tokens)
+@dataclass(frozen=True)
+class Job:
+    """One repo to summarize. Its cache digest is the exact text the model sees, so a new gate verdict or a
+    change to budget assembly re-summarizes it without a commit."""
+
+    repo: Repo
+    card_text: str
+    gated: bool
+
+    @property
+    def input_sha(self) -> str:
+        return sha(self.card_text)
+
+
+def pending_jobs(ctx: Ctx) -> list[Job]:
+    jobs: list[Job] = []
+    for repo in ctx.selected("stars"):
+        if ctx.limit is not None and len(jobs) >= ctx.limit:
+            break
+        loaded = load_card(ctx.db, repo)
+        if loaded is None:
+            continue
+        card, art = loaded
+        gate = load_gate(ctx.db, repo, art["input_sha"])
+        job = Job(repo, assemble(card, gate, count_tokens), gate is not None)
+        if ctx.cached("summary", repo, SUMMARY_VERSION, input_sha=job.input_sha) is None:
+            jobs.append(job)
+    return jobs
+
+
+async def summarize_repo(state: RunState, ctx: Ctx, job: Job) -> None:
+    repo, card_text = job.repo, job.card_text
     tried: set[str] = set()
     best: Attempt | None = None
     attempts: list[dict] = []
@@ -159,9 +189,9 @@ async def summarize_repo(state: RunState, ctx: Ctx, repo: Repo, card: Card, card
             "passed": bool(best.verdict and best.verdict.passed),
             "quality": best.verdict.quality if best.verdict else None,
             "attempts": attempts,
-            "gated": gate is not None,
+            "gated": job.gated,
             "card_tokens": count_tokens(card_text),
-            "input_sha": card_sha,
+            "input_sha": job.input_sha,
         },
     )
 
@@ -174,16 +204,7 @@ async def run_summarize(ctx: Ctx, provider: Provider = "openrouter", reserve: in
         pool, transport = await openrouter.build_pool(key)
     state = RunState(provider, pool, transport, dec.Decider(key))
 
-    jobs: list[tuple[Repo, Card, str]] = []
-    for repo in ctx.db.repos(order="stars"):
-        loaded = load_card(ctx.db, repo)
-        if loaded is None:
-            continue
-        card, art = loaded
-        if ctx.cached("summary", repo, SUMMARY_VERSION, input_sha=art["input_sha"]) is None:
-            jobs.append((repo, card, art["input_sha"]))
-    if ctx.limit is not None:
-        jobs = jobs[: ctx.limit]
+    jobs = pending_jobs(ctx)
 
     t0 = time.monotonic()
     done = 0
@@ -198,17 +219,19 @@ async def run_summarize(ctx: Ctx, provider: Provider = "openrouter", reserve: in
                     break
                 size = BATCH_SIZE
                 if provider == "openrouter":
-                    headroom = quota.headroom(reserve)
+                    # /key's free counter lagged our own requests in testing, so also spend down the run-start
+                    # headroom by the requests this run has sent.
+                    headroom = min(quota.headroom(reserve), quota_start.headroom(reserve) - state.requests)
                     if headroom <= 0:
-                        state.stop = f"free requests remaining {quota.free_remaining} ≤ reserve {reserve}"
+                        state.stop = f"free headroom exhausted (remaining {quota.free_remaining}, sent {state.requests}, reserve {reserve})"
                         break
                     size = max(1, min(BATCH_SIZE, headroom // WORST_CASE_REQUESTS_PER_REPO))
                 else:
                     size = local.CONCURRENCY * 2
                 batch = jobs[done : done + size]
 
-                async def one(job: tuple[Repo, Card, str]) -> None:
-                    await summarize_repo(state, ctx, *job)
+                async def one(job: Job) -> None:
+                    await summarize_repo(state, ctx, job)
                     prog.advance(task)
 
                 try:

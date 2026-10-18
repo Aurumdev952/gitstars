@@ -7,8 +7,10 @@ from typing import Annotated, Any
 
 import typer
 from rich.console import Console
+from rich.markup import escape
 from rich.panel import Panel
 from rich.table import Table
+from rich.text import Text
 
 from gitstars.cards import load_card, load_gate
 from gitstars.config import Paths, openrouter_key
@@ -22,21 +24,23 @@ from gitstars.summarize import SUMMARY_VERSION, Provider
 from gitstars.tokens import count_tokens
 
 app = typer.Typer(no_args_is_help=True, add_completion=False, help="gitstars pipeline: GitHub stars → galaxy export.")
-console = Console()
+# Repo text is data: no emoji codes (":free" became an emoji) and no markup from descriptions.
+console = Console(emoji=False, highlight=False)
 
 Limit = Annotated[int | None, typer.Option("--limit", "-n", help="Process at most N repos (dry runs).")]
 Force = Annotated[bool, typer.Option("--force", help="Ignore caches for this stage.")]
 ProviderOpt = Annotated[str, typer.Option("--provider", help="openrouter (free pool) or local (vLLM).")]
 Reserve = Annotated[int, typer.Option("--reserve", help="Free requests to keep in reserve.")]
+Only = Annotated[list[str] | None, typer.Option("--repo", help="Only these repos (owner/name); repeatable.")]
 
 
-def _ctx(limit: int | None = None, force: bool = False) -> Ctx:
+def _ctx(limit: int | None = None, force: bool = False, only: list[str] | None = None) -> Ctx:
     paths = Paths.resolve()
-    return Ctx(paths=paths, db=DB(paths.db), console=console, limit=limit, force=force)
+    return Ctx(paths=paths, db=DB(paths.db), console=console, limit=limit, force=force, only=tuple(only or ()))
 
 
-def _run(stage: str, limit: int | None, force: bool, **kwargs: Any) -> dict:
-    ctx = _ctx(limit, force)
+def _run(stage: str, limit: int | None, force: bool, only: list[str] | None = None, **kwargs: Any) -> dict:
+    ctx = _ctx(limit, force, only)
     t0 = time.monotonic()
     try:
         result = STAGES[stage](ctx, **kwargs)
@@ -49,7 +53,7 @@ def _run(stage: str, limit: int | None, force: bool, **kwargs: Any) -> dict:
 def _print_result(stage: str, result: dict, seconds: float) -> None:
     table = Table(title=f"gs {stage}  ({seconds:.1f}s)", show_header=False, title_justify="left")
     for k, v in result.items():
-        table.add_row(k, json.dumps(v) if isinstance(v, (dict, list)) else str(v))
+        table.add_row(k, escape(json.dumps(v) if isinstance(v, (dict, list)) else str(v)))
     console.print(table)
 
 
@@ -72,18 +76,20 @@ def card(limit: Limit = None, force: Force = False) -> None:
 
 
 @app.command()
-def gate(limit: Limit = None, force: Force = False) -> None:
+def gate(limit: Limit = None, force: Force = False, repo: Only = None) -> None:
     """pplx-decider: keep project-specific candidates, rate the README. Most-starred first."""
-    _run("gate", limit, force)
+    _run("gate", limit, force, repo)
 
 
 @app.command()
-def summarize(limit: Limit = None, force: Force = False, provider: ProviderOpt = "openrouter", reserve: Reserve = 100) -> None:
+def summarize(
+    limit: Limit = None, force: Force = False, provider: ProviderOpt = "openrouter", reserve: Reserve = 100, repo: Only = None
+) -> None:
     """Summarize on the model pool and judge each summary. Most-starred first; stops at the quota reserve."""
     if provider not in ("openrouter", "local"):
         raise typer.BadParameter("provider must be openrouter or local")
     p: Provider = provider  # type: ignore[assignment]
-    _run("summarize", limit, force, provider=p, reserve=reserve)
+    _run("summarize", limit, force, repo, provider=p, reserve=reserve)
 
 
 @app.command()
@@ -131,8 +137,8 @@ def show(repo: str) -> None:
     r = ctx.db.repo(repo)
     if r is None:
         raise typer.BadParameter(f"{repo} is not an active star")
-    console.print(Panel.fit(f"[bold]{r.full_name}[/]  ★{r.stars}  {r.language or ''}  starred {r.starred_at[:10]}\n"
-                            f"{r.description or '(no description)'}\nhomepage: {r.homepage or '-'}  head {r.head_oid[:10]}"))
+    console.print(Panel.fit(Text(f"{r.full_name}  ★{r.stars}  {r.language or ''}  starred {r.starred_at[:10]}\n"
+                                 f"{r.description or '(no description)'}\nhomepage: {r.homepage or '-'}  head {r.head_oid[:10]}")))
     loaded = load_card(ctx.db, r)
     if loaded is None:
         console.print("[yellow]no card; run `gs card`[/]")
@@ -143,15 +149,15 @@ def show(repo: str) -> None:
     cands = Table("candidate", "source", "chars", "gate p(keep)", title="candidate pool", title_justify="left")
     for cid, c in card.candidates.items():
         p = gate.keep.get(cid) if gate else None
-        cands.add_row(cid.value, c.source[:60], str(len(c.text)), "-" if p is None else f"{p:.2f}")
+        cands.add_row(cid.value, escape(c.source[:60]), str(len(c.text)), "-" if p is None else f"{p:.2f}")
     console.print(cands)
-    console.print(f"gate: {('readme_quality=' + gate.readme_quality.value + ' model=' + gate.model) if gate else 'none (heuristic budget)'}")
-    console.print(Panel(text, title=f"card sent to summarizer · {count_tokens(text)} tokens", title_align="left"))
+    console.print(Text(f"gate: {('readme_quality=' + gate.readme_quality.value + ' model=' + gate.model) if gate else 'none (heuristic budget)'}"))
+    console.print(Panel(Text(text), title=f"card sent to summarizer · {count_tokens(text)} tokens", title_align="left"))
     s = ctx.db.get_artifact("summary", cache_key(r, SUMMARY_VERSION))
     if not s:
         console.print("[yellow]not summarized[/]")
         return
-    console.print(Panel(json.dumps(s["summary"], indent=2, ensure_ascii=False), title=f"summary · {s['model']} ({s['provider']})", title_align="left"))
+    console.print(Panel(Text(json.dumps(s["summary"], indent=2, ensure_ascii=False)), title=escape(f"summary · {s['model']} ({s['provider']})"), title_align="left"))
     v = s.get("verdict")
     if v:
         console.print(
@@ -160,7 +166,7 @@ def show(repo: str) -> None:
         )
         for a in s["attempts"]:
             av = a.get("verdict") or {}
-            console.print(f"  · {a['model']}: score {av.get('score', float('nan')):.2f} passed={a['passed']}")
+            console.print(Text(f"  · {a['model']}: score {av.get('score', float('nan')):.2f} passed={a['passed']}"))
 
 
 @app.command()
@@ -175,13 +181,13 @@ def report(samples: int = 5) -> None:
     for g in sorted(set(lay["galaxy"])):
         gm = [i for i, x in enumerate(lay["galaxy"]) if x == g]
         gn = cluster_name(ctx.db, lay, g, [names[i] for i in gm])
-        console.print(f"\n[bold cyan]{g}[/] [bold]{gn['name']}[/]  ({len(gm)} repos)  kw: {', '.join(gn['keywords'][:6])}")
+        console.print(f"\n[bold cyan]{g}[/] [bold]{escape(gn['name'])}[/]  ({len(gm)} repos)  kw: {escape(', '.join(gn['keywords'][:6]))}")
         for s in sorted({lay["system"][i] for i in gm}):
             sm = [i for i, x in enumerate(lay["system"]) if x == s]
             sn = cluster_name(ctx.db, lay, s, [names[i] for i in sm])
             top = sorted(sm, key=lambda i: -repos[names[i]].stars)[:samples]
             outl = sum(lay["outlier"][i] for i in sm)
-            console.print(f"  [cyan]{s}[/] {sn['name']}  ({len(sm)}, {outl} outliers): " + ", ".join(names[i] for i in top))
+            console.print(f"  [cyan]{s}[/] {escape(sn['name'])}  ({len(sm)}, {outl} outliers): " + escape(", ".join(names[i] for i in top)))
 
 
 @app.command()

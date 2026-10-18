@@ -63,7 +63,7 @@ def test_endpoint_health():
 
 def test_pick_prefers_rank_and_respects_rpm():
     clock = FakeClock()
-    a, b = ModelSlot("a", rpm=2), ModelSlot("b", rpm=2)
+    a, b = ModelSlot("a", rpm=2, ok=1), ModelSlot("b", rpm=2, ok=1)
     slots = [a, b]
     for _ in range(2):
         s = pick(slots, clock.now(), set())
@@ -110,9 +110,30 @@ async def test_retry_after_cools_down_one_model():
     assert (await pool.acquire()) is a
 
 
+async def test_permanent_refusal_disables_model():
+    clock = FakeClock()
+    a, b = ModelSlot("a", rpm=None), ModelSlot("b", rpm=None)
+    pool = Pool([a, b], concurrency=15, clock=clock)
+    pool.release(await pool.acquire(), False, disable=True)
+    clock.t += 10 * BENCH_SECONDS
+    assert (await pool.acquire()) is b, "a 403 model never comes back"
+    with pytest.raises(PoolExhausted, match="disabled"):
+        await pool.acquire(exclude={"b"})
+
+
+async def test_unproven_model_gets_one_request_at_a_time():
+    clock = FakeClock()
+    a, b = ModelSlot("a", rpm=None), ModelSlot("b", rpm=None)
+    pool = Pool([a, b], concurrency=15, clock=clock)
+    first, second = await pool.acquire(), await pool.acquire()
+    assert (first, second) == (a, b), "a is busy with its first request, so the burst overflows"
+    pool.release(first, True)
+    assert [await pool.acquire() for _ in range(3)] == [a, a, a], "proven, a takes the traffic"
+
+
 async def test_global_concurrency_and_in_flight_cap():
     clock = FakeClock()
-    local = ModelSlot("gemma", rpm=None, max_in_flight=2)
+    local = ModelSlot("gemma", rpm=None, max_in_flight=2, ok=1)
     pool = Pool([local], concurrency=64, clock=clock)
     await pool.acquire()
     await pool.acquire()

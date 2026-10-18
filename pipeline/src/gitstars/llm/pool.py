@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import math
 import re
 import time
 from collections import deque
@@ -59,6 +60,10 @@ class ModelSlot:
             return False
         if self.max_in_flight is not None and self.in_flight >= self.max_in_flight:
             return False
+        # One request at a time until the model has answered once, so a model that refuses us costs one
+        # request instead of a burst of fifteen.
+        if self.ok == 0 and self.in_flight >= 1:
+            return False
         return self.rpm is None or len(self.starts) < self.rpm
 
     def free_at(self, now: float) -> float:
@@ -73,8 +78,12 @@ class ModelSlot:
         self.starts.append(now)
         self.in_flight += 1
 
-    def finish(self, now: float, success: bool, retry_after: float | None = None) -> None:
+    def finish(self, now: float, success: bool, retry_after: float | None = None, disable: bool = False) -> None:
         self.in_flight -= 1
+        if disable:
+            self.failed += 1
+            self.benched_until = math.inf
+            return
         if success:
             self.ok += 1
             self.consecutive_failures = 0
@@ -127,14 +136,16 @@ class Pool:
                 if now >= deadline:
                     raise PoolExhausted("no model became available")
                 wake = min(s.free_at(now) for s in candidates)
+                if math.isinf(wake):
+                    raise PoolExhausted("every remaining model is disabled")
                 # Capped so a slot freed by a finishing request (not visible in free_at) is noticed promptly.
                 await self.clock.sleep(max(0.05, min(wake - now, deadline - now, POLL_SECONDS)))
         except BaseException:
             self.sem.release()
             raise
 
-    def release(self, slot: ModelSlot, success: bool, retry_after: float | None = None) -> None:
-        slot.finish(self.clock.now(), success, retry_after)
+    def release(self, slot: ModelSlot, success: bool, retry_after: float | None = None, disable: bool = False) -> None:
+        slot.finish(self.clock.now(), success, retry_after, disable)
         self.sem.release()
 
 

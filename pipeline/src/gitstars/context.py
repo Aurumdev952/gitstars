@@ -23,6 +23,15 @@ class Ctx:
     console: Console
     limit: int | None = None
     force: bool = False
+    only: tuple[str, ...] = ()
+
+    def selected(self, order: str = "stars") -> list[Repo]:
+        """Active repos in `order`, narrowed to `only` (owner/name, any case) when given."""
+        repos = self.db.repos(order=order)
+        if not self.only:
+            return repos
+        wanted = {n.lower() for n in self.only}
+        return [r for r in repos if r.full_name.lower() in wanted]
 
     def key(self, repo: Repo, version: int) -> CacheKey:
         return cache_key(repo, version)

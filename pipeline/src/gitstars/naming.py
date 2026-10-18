@@ -150,7 +150,7 @@ async def run_name(ctx: Ctx, reserve: int = openrouter.FREE_RESERVE) -> dict:
                 raw = await transport.complete(slot, [{"role": "system", "content": NAME_SYSTEM}, {"role": "user", "content": prompt}])
                 cn = _parse_name(raw)
             except (TransportError, ValueError, ValidationError) as exc:
-                pool.release(slot, False, getattr(exc, "retry_after", None))
+                pool.release(slot, False, getattr(exc, "retry_after", None), disable=getattr(exc, "permanent", False))
                 continue
             pool.release(slot, True)
             stored[cid] = {**cn.model_dump(), "model": slot.id, "members_sha": sha([names[i] for i in members])}

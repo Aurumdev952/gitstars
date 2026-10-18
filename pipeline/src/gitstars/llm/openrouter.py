@@ -21,9 +21,10 @@ MIN_BALANCE_USD = 0.20
 class TransportError(RuntimeError):
     """A request failed in a way that should move the job to the next model."""
 
-    def __init__(self, message: str, retry_after: float | None = None):
+    def __init__(self, message: str, retry_after: float | None = None, permanent: bool = False):
         super().__init__(message)
         self.retry_after = retry_after
+        self.permanent = permanent
 
 
 class FatalProviderError(RuntimeError):
@@ -70,8 +71,11 @@ class ChatTransport:
             resp = await self.client.post(f"{self.base_url}/chat/completions", headers=self.headers, json=self.body(slot, messages))
         except httpx.HTTPError as exc:
             raise TransportError(f"{type(exc).__name__}") from exc
-        if resp.status_code in (401, 402, 403):
+        if resp.status_code in (401, 402):
             raise FatalProviderError(f"http {resp.status_code}: {resp.text[:200]}")
+        if resp.status_code == 403:
+            # Per-model refusal, e.g. "only available on agentic harnesses"; this model will never serve us.
+            raise TransportError(f"http 403: {resp.text[:160]}", permanent=True)
         if resp.status_code == 429:
             raise TransportError("http 429", retry_after=_retry_after(resp))
         if resp.status_code >= 400:
