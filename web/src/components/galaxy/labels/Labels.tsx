@@ -15,10 +15,14 @@ const LABEL_FONT = '/fonts/Geist-Medium.woff'
 const CHARACTERS = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789&-.,:/+ \'’()'
 const RETICLE = 24
 const FADE_RATE = 10
-const SYSTEM = { maxShown: 25, onPx: 130, offPx: 105 }
+/** Thresholds on the projected `extent`; the median system's export radius is 1.36 times it. */
+const SYSTEM = { maxShown: 25, onPx: 96, offPx: 77 }
 /** Names longer than this many characters wrap onto two balanced lines. */
 const WRAP = { galaxy: 20, system: 26 }
-/** Pixels a cluster label may sit from its anchor before it hides instead. */
+/**
+ * Pixels a cluster label may sit from its anchor. Every `insetSlots` slot is within 6 px, so today
+ * a label hides because its slots collide; this guard keeps any future slot from letting it wander.
+ */
 const MAX_DRIFT = 12
 const REPO = { autoCount: 24, moreCount: 40, minPx: 7, reselectMs: 100, candidates: 80 }
 
@@ -35,6 +39,8 @@ type ClusterLabel = {
   px: number
   /** Last placement slot, for hysteresis; null while hidden. */
   slot: number | null
+  /** The slot it is drawn in, kept through a fade-out so a hiding name stays on its anchor. */
+  drawn: number
   shown: boolean
   /** Placed in this frame's occupancy pass. */
   placed: boolean
@@ -92,6 +98,7 @@ function makeLabels(nodes: ClusterNode[], macro: boolean): ClusterLabel[] {
     color: inkTint(node.color.linear, macro ? 0.62 : 0.45),
     px: macro ? sceneTheme.label.macroPx : sceneTheme.label.systemPx,
     slot: null,
+    drawn: 0,
     shown: false,
     placed: false,
     alpha: 0,
@@ -112,6 +119,7 @@ export function Labels({ galaxy }: { galaxy: GalaxyIndex }) {
   const all = useMemo(() => [...macro, ...systems], [macro, systems])
   const byPriority = useMemo(() => [...macro], [macro])
   const bySize = useRef<ClusterLabel[]>([])
+  const crowded = useMemo(() => new Set<string | null>(), [])
   const groups = useRef<Map<ClusterLabel, Group>>(new Map())
   const texts = useRef<Map<ClusterLabel, TextLike>>(new Map())
   const occ = useRef(new Occupancy(1, 1))
@@ -217,34 +225,41 @@ export function Labels({ galaxy }: { galaxy: GalaxyIndex }) {
     const lensDim = s.lens.state === 'ready' ? 0.5 : 1
     const reveal = (order: number) => (sceneBus.labelClock === Infinity ? 1 : labelReveal(sceneBus.labelClock, order))
 
+    // System labels qualify once a system spans enough of the screen; largest first, at most 25.
+    const sized = bySize.current
+    sized.length = 0
+    crowded.clear()
+    for (const l of systems) {
+      const born = layout.timelineOn ? (sceneBus.systemBorn[l.node.index] ?? 1) : 1
+      l.key = labelsOn && born > 0.05 ? projectedRadius(l.node, flat, m, cam) : 0
+      l.shown = hysteresis(l.shown, l.key, SYSTEM.onPx, SYSTEM.offPx)
+      l.placed = false
+      if (l.shown) {
+        sized.push(l)
+        crowded.add(l.node.parentId)
+      }
+    }
+    sized.sort(byKeyDesc)
+
     // Galaxy labels, the largest on screen first (members over distance), so where galaxies overlap
     // in projection a big one keeps its name and a small one yields. They fade once the camera is
-    // inside the galaxy.
+    // inside the galaxy. A galaxy whose systems are named places after them: its name sits on the
+    // same density peak as its main system's and would otherwise always take that system's spot.
     for (const l of byPriority) {
       l.dist = cam.position.distanceTo(clusterAnchor(l.node, flat, anchor))
       l.key = l.node.core.length / Math.max(1, l.dist)
     }
     byPriority.sort(byKeyDesc)
-    for (const l of byPriority) {
+    const placeGalaxy = (l: ClusterLabel) => {
       const inside = Math.min(1, Math.max(0, (l.dist / Math.max(1, l.node.extent) - 1.1) / 1.4))
       const shown = inside > 0.05 && placeCluster(l, texts.current.get(l), o, m, flat)
       const emphasis = (s.hoveredCluster === null ? 0.86 : s.hoveredCluster === l.node.id ? 1 : 0.4) * lensDim
       const born = layout.timelineOn ? bornShare(u.uGalaxyBorn.value[l.node.index] ?? 1) : 1
       l.alpha = fade(l.alpha, shown && born > 0 ? inside * emphasis * reveal(l.order) * born : 0)
     }
+    for (const l of byPriority) if (!crowded.has(l.node.id)) placeGalaxy(l)
 
-    // System labels once a system spans enough of the screen, largest first, at most 25.
     const focusGalaxy = s.focusCluster ? (g.clusterById.get(s.focusCluster)?.level === 0 ? s.focusCluster : g.clusterById.get(s.focusCluster)?.parentId) : null
-    const sized = bySize.current
-    sized.length = 0
-    for (const l of systems) {
-      const born = layout.timelineOn ? (sceneBus.systemBorn[l.node.index] ?? 1) : 1
-      l.key = labelsOn && born > 0.05 ? projectedRadius(l.node, flat, m, cam) : 0
-      l.shown = hysteresis(l.shown, l.key, SYSTEM.onPx, SYSTEM.offPx)
-      l.placed = false
-      if (l.shown) sized.push(l)
-    }
-    sized.sort(byKeyDesc)
     let sysCount = 0
     for (const l of sized) {
       if (sysCount >= SYSTEM.maxShown) break
@@ -253,6 +268,7 @@ export function Labels({ galaxy }: { galaxy: GalaxyIndex }) {
         sysCount++
       }
     }
+    for (const l of byPriority) if (crowded.has(l.node.id)) placeGalaxy(l)
     const systemReveal = reveal(macro.length)
     for (const l of systems) {
       const dim = focusGalaxy && l.node.parentId !== focusGalaxy ? 0.35 : 1
@@ -298,12 +314,13 @@ export function Labels({ galaxy }: { galaxy: GalaxyIndex }) {
       group.visible = l.alpha > 0.002
       text.fillOpacity = l.alpha
       text.outlineOpacity = l.alpha * 0.75
-      if (!group.visible || l.slot === null) continue
+      if (l.slot !== null) l.drawn = l.slot
+      if (!group.visible) continue
       clusterAnchor(l.node, flat, anchor)
       const depth = Math.max(1, -viewPos.copy(anchor).applyMatrix4(cam.matrixWorldInverse).z)
       const unit = depth * worldPerPx
       const { w, h } = measure(l, text)
-      const [dx, dy] = insetSlots(w, h, labelSlots)[l.slot]!
+      const [dx, dy] = insetSlots(w, h, labelSlots)[l.drawn]!
       // Slot offsets are top-left in screen pixels; the text is anchored at its centre.
       const cx = dx + w / 2
       const cy = dy + h / 2
@@ -391,7 +408,7 @@ function projectedRadius(c: ClusterNode, flat: number, m: Projector, cam: Perspe
   const p = projectPoint(m, anchor.x, anchor.y, anchor.z, screen)
   if (!p) return 0
   const focal = m.height / 2 / Math.tan((cam.fov * Math.PI) / 360)
-  return (c.radius * focal) / Math.max(1, p.viewDist)
+  return (c.extent * focal) / Math.max(1, p.viewDist)
 }
 
 const estimateWidth = (fullName: string) => fullName.length * 6.65 + 2

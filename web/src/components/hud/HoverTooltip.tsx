@@ -83,7 +83,7 @@ export function HoverTooltip() {
         ) : (
           <ClusterDot color={sys.color.css} className="size-1.5" />
         )}
-        {r.outlier ? `Loosely in ${sys.name}` : sys.name}
+        {r.outlier ? `Loosely placed in ${sys.name}` : sys.name}
       </p>
     </div>
   )

@@ -95,14 +95,27 @@ describe('densityPeak', () => {
     const mean: [number, number, number] = [-2, 0, 0]
     const nearest = (p: readonly number[]) => Math.min(...members.map((m) => Math.hypot(pts[m * 3]! - p[0]!, pts[m * 3 + 1]! - p[1]!, pts[m * 3 + 2]! - p[2]!)))
     expect(nearest(mean)).toBeGreaterThan(7)
-    const peak = densityPeak(pts, members, mean, 4)
+    const peak = densityPeak(pts, members, 4)
     expect(nearest(peak)).toBeLessThan(1)
     expect(peak[0]).toBeLessThan(0)
   })
 
+  it('leaves the saddle between two equal lobes for one of them', () => {
+    const pts: number[] = []
+    for (let k = 0; k < 20; k++) pts.push(-10 + Math.cos(k) * 0.8, Math.sin(k) * 0.8, 0)
+    for (let k = 0; k < 20; k++) pts.push(10 + Math.cos(k) * 0.8, Math.sin(k) * 0.8, 0)
+    const peak = densityPeak(pts, Array.from({ length: 40 }, (_, k) => k), 6)
+    expect(Math.abs(Math.abs(peak[0]) - 10)).toBeLessThan(1)
+  })
+
+  it('stays on a star when a cluster has two', () => {
+    const peak = densityPeak([0, 0, 0, 10, 0, 0], [0, 1], 3)
+    expect(Math.min(Math.abs(peak[0]), Math.abs(peak[0] - 10))).toBeLessThan(0.5)
+  })
+
   it('ignores a far outlier that drags the mean', () => {
     const pts = [0, 0, 0, 1, 0, 0, 0, 1, 0, 1, 1, 0, 300, 0, 0]
-    const peak = densityPeak(pts, [0, 1, 2, 3, 4], [60.4, 0.4, 0], 40)
+    const peak = densityPeak(pts, [0, 1, 2, 3, 4], 40)
     expect(Math.hypot(peak[0] - 0.5, peak[1] - 0.5)).toBeLessThan(0.5)
   })
 })

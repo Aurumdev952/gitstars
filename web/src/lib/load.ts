@@ -10,9 +10,9 @@ export type ClusterNode = Cluster & {
   index: number
   color: ClusterColor
   /**
-   * Members that belong here, without the outliers (repos whose nearest neighbours gave no system a
-   * majority); all members when every one is an outlier. Labels, hulls, constellations and member
-   * samples use these, so a loosely placed star neither drags the shape nor stands for the cluster.
+   * Members without the outliers, for geometry: repos that HDBSCAN left as noise and the pipeline
+   * attached to the system with the nearest centroid. All members when every one is an outlier.
+   * Label anchors, hulls and constellations use these, so a loosely placed star does not drag them.
    */
   core: number[]
   /** Where the name label pins: the core's density peak in 3D, and on the flat map (z = 0). */
@@ -131,7 +131,7 @@ export function buildGalaxyIndex(data: GalaxyData, vectorsUrl = ''): GalaxyIndex
     const mean: Vec3 = [0, 0, 0]
     for (const m of members) for (let k = 0; k < 3; k++) mean[k] += points[m * 3 + k]! / members.length
     const from = (p: readonly number[]) => members.map((m) => Math.hypot(points[m * 3]! - p[0]!, points[m * 3 + 1]! - p[1]!, points[m * 3 + 2]! - p[2]!))
-    const peak = densityPeak(points, members, mean, ANCHOR_BANDWIDTH * Math.max(quantile(from(mean), 0.5), 1e-3))
+    const peak = densityPeak(points, members, ANCHOR_BANDWIDTH * Math.max(quantile(from(mean), 0.5), 1e-3))
     return { peak, extent: EXTENT_SCALE * quantile(from(peak), 0.5) }
   }
   const placement = (c: Cluster) => {

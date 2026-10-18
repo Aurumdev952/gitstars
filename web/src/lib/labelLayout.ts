@@ -138,7 +138,7 @@ function setSlot(out: Slot[], k: number, x: number, y: number) {
 
 /**
  * For a name set on its cluster's anchor: centred on it, then nudged up, down, left and right while
- * still covering it, then just clear of it above and below, and last with a corner on it.
+ * still covering it, then just clear of it above and below, and last with a corner 4 px off it.
  */
 export function insetSlots(w: number, h: number, out: Slot[] = slotArray(11)): Slot[] {
   setSlot(out, 0, -w / 2, -h / 2)
@@ -184,14 +184,33 @@ export function hysteresis(wasShown: boolean, value: number, on: number, off: nu
 
 export type Vec3 = [number, number, number]
 
+/** Candidate starts tried by `densityPeak`; enough to find the densest lobe of a 500-star galaxy. */
+const PEAK_CANDIDATES = 256
+
 /**
- * Where a cluster's name belongs: the densest region near its centroid, found by mean shift from
- * the centroid with a Gaussian kernel of `bandwidth`. The mean of a crescent or two-lobed cluster
- * can fall in the gap between its lobes; the mode always sits on stars.
+ * Where a cluster's name belongs: its densest region under a Gaussian kernel of `bandwidth`. It
+ * starts from the member with the highest kernel density and refines by mean shift. The mean of a
+ * crescent or two-lobed cluster can fall in the gap between its lobes, and mean shift started there
+ * sits still on the saddle, so the start is a star, never the mean.
  */
-export function densityPeak(points: ArrayLike<number>, members: readonly number[], start: Vec3, bandwidth: number, iterations = 16): Vec3 {
-  const p: Vec3 = [start[0], start[1], start[2]]
+export function densityPeak(points: ArrayLike<number>, members: readonly number[], bandwidth: number, iterations = 16): Vec3 {
+  const p: Vec3 = [0, 0, 0]
+  if (members.length === 0) return p
   const inv = 1 / (2 * Math.max(1e-6, bandwidth) ** 2)
+  const stride = Math.max(1, Math.ceil(members.length / PEAK_CANDIDATES))
+  let best = -1
+  for (let c = 0; c < members.length; c += stride) {
+    const o = members[c]! * 3
+    let density = 0
+    for (const m of members)
+      density += Math.exp(-((points[m * 3]! - points[o]!) ** 2 + (points[m * 3 + 1]! - points[o + 1]!) ** 2 + (points[m * 3 + 2]! - points[o + 2]!) ** 2) * inv)
+    if (density > best) {
+      best = density
+      p[0] = points[o]!
+      p[1] = points[o + 1]!
+      p[2] = points[o + 2]!
+    }
+  }
   for (let it = 0; it < iterations; it++) {
     let sx = 0
     let sy = 0

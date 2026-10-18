@@ -115,7 +115,7 @@ function RepoDetails({ g, i }: { g: GalaxyIndex; i: number }) {
               <button type="button" className="text-ink-muted underline decoration-white/15 underline-offset-2 hover:text-ink" onClick={() => focus(system.id)}>
                 {system.name}
               </button>
-              : its nearest stars are spread across several systems.
+              : it is not part of any system's dense core, so it sits with the closest one.
             </span>
           </p>
         )}

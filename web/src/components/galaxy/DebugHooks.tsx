@@ -23,12 +23,12 @@ type DebugApi = {
   focus(id: string | null): void
   /** Renders continuously for `ms` and returns the measured frame rate. */
   measureFps(ms?: number): Promise<{ fps: number; frames: number; drawCalls: number }>
-  /** overlap@10 of the browser model against meta.searchProbes. */
   /**
    * Every visible cluster label with its screen rect and how well it reads as its own cluster's:
    * `share` is the fraction of stars under the rect (16 px apron) that belong to that cluster.
    */
   labels(): LabelReport[]
+  /** overlap@10 of the browser model against meta.searchProbes. */
   probe: typeof probeSearch
   timeQuery: typeof timeQuery
   store: typeof useGalaxyStore

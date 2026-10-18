@@ -35,6 +35,8 @@ describe('search params', () => {
     const back = parse(defaultParseSearch('?kind=cli&lang=Rust&tag=wasm'))
     expect(filtersFromSearch(back)).toEqual({ ...NO_FILTERS, kind: ['cli'], lang: ['Rust'], tag: ['wasm'] })
     expect(parse(defaultParseSearch('?kind=nonsense')).kind).toBeUndefined()
+    expect(parse(defaultParseSearch('?tag=2024')).tag).toEqual(['2024'])
+    expect(parse(defaultParseSearch('?tag=true')).tag).toEqual(['true'])
   })
 
   it('cuts an over-long query instead of dropping it', () => {

@@ -10,7 +10,7 @@ const flag = z
 // A hand-written link says `?lang=Rust`; the router itself writes `?lang=%5B%22Rust%22%5D`.
 const list = <T extends z.ZodType>(item: T) =>
   z
-    .preprocess((v) => (typeof v === 'string' ? [v] : v), z.array(item))
+    .preprocess((v) => (v !== null && typeof v !== 'object' ? [String(v)] : v), z.array(item))
     .optional()
     .catch(undefined)
 const month = z.string().regex(/^\d{4}-\d{2}$/)

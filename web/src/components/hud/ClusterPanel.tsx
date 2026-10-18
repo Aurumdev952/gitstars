@@ -4,7 +4,7 @@ import { X } from 'lucide-react'
 import { useGalaxyStore } from '#/state/store'
 import type { ClusterNode, GalaxyIndex } from '#/lib/load'
 import { formatCompact, formatCount, splitFullName } from '#/lib/format'
-import { toggleValue, type Filters } from '#/lib/filters'
+import { toggleValue } from '#/lib/filters'
 import { memberGroups } from '#/lib/members'
 import { cn } from '#/lib/utils'
 import { ClusterDot } from './Legend'
@@ -39,8 +39,8 @@ export function ClusterPanel() {
   )
 }
 
-function mix(members: readonly number[], key: (i: number) => string | null) {
-  const counts = new Map<string, number>()
+function mix<K extends string>(members: readonly number[], key: (i: number) => K | null) {
+  const counts = new Map<K, number>()
   for (const i of members) {
     const k = key(i)
     if (k) counts.set(k, (counts.get(k) ?? 0) + 1)
@@ -160,7 +160,7 @@ function ClusterDetails({ g, c }: { g: GalaxyIndex; c: ClusterNode }) {
         )}
 
         <div className="mt-5 grid grid-cols-2 gap-5 border-t border-glass-border pt-4">
-          <MixBars title="Kinds" rows={kinds} total={total} color={c.color.css} active={filters.kind} onToggle={(k) => setFilters(toggleValue(filters, 'kind', k as Filters['kind'][number]))} />
+          <MixBars title="Kinds" rows={kinds} total={total} color={c.color.css} active={filters.kind} onToggle={(k) => setFilters(toggleValue(filters, 'kind', k))} />
           <MixBars title="Languages" rows={languages} total={total} color={c.color.css} active={filters.lang} onToggle={(k) => setFilters(toggleValue(filters, 'lang', k))} />
         </div>
 
@@ -207,7 +207,7 @@ function ClusterDetails({ g, c }: { g: GalaxyIndex; c: ClusterNode }) {
                 Loosely related <span className="tabular font-normal">· {formatCount(loose.length)}</span>
               </h3>
               <p className="mt-1 text-[11.5px] leading-snug text-ink-faint">
-                Placed here, but their nearest stars are spread across several systems.
+                Not part of any system's dense core; each sits with the system closest in meaning.
               </p>
               <ul className="mt-2 -mx-2">{loose.slice(0, LOOSE_SHOWN).map((i) => row(i, true))}</ul>
               {loose.length > LOOSE_SHOWN && (
@@ -221,7 +221,7 @@ function ClusterDetails({ g, c }: { g: GalaxyIndex; c: ClusterNode }) {
   )
 }
 
-function MixBars({
+function MixBars<K extends string>({
   title,
   rows,
   total,
@@ -230,11 +230,11 @@ function MixBars({
   onToggle,
 }: {
   title: string
-  rows: [string, number][]
+  rows: [K, number][]
   total: number
   color: string
-  active: readonly string[]
-  onToggle: (key: string) => void
+  active: readonly K[]
+  onToggle: (key: K) => void
 }) {
   const top = rows.slice(0, 5)
   const rest = rows.slice(5).reduce((n, [, c]) => n + c, 0)
