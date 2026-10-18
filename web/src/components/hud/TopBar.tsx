@@ -74,7 +74,7 @@ function Wordmark({ dataName }: { dataName: string }) {
           <span className="tabular font-medium text-ink-muted">{formatCount(counts.systems)}</span> systems
         </span>
       </p>
-      <p className="mt-0.5 pl-[28px] text-[11.5px] text-ink-faint/80 [text-shadow:0_1px_8px_rgb(0_0_0/0.9)]">
+      <p className="mt-0.5 pl-[28px] text-[11.5px] text-ink-faint [text-shadow:0_1px_8px_rgb(0_0_0/0.9)]">
         starred by <span className="text-ink-faint">{g.data.meta.viewer}</span>
       </p>
     </header>

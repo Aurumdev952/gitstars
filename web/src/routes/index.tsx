@@ -24,6 +24,14 @@ export const Route = createFileRoute('/')({
     return loadGalaxy(source).then((galaxy) => ({ galaxy, dataName: source.name }))
   },
   staleTime: Infinity,
+  // The tab names where you are: a repo, a cluster, a search, or the galaxy itself.
+  head: ({ match, loaderData }) => {
+    const s = match.search
+    const cluster = s.cluster ? loaderData?.galaxy.clusterById.get(s.cluster)?.name : undefined
+    const place = s.repo ?? cluster ?? (s.q ? `“${s.q}”` : null)
+    const stars = loaderData ? `${loaderData.galaxy.n.toLocaleString('en-US')} stars` : null
+    return { meta: [{ title: place ? `${place} · gitstars` : stars ? `gitstars · ${stars}` : 'gitstars' }] }
+  },
   pendingComponent: Pending,
   errorComponent: LoadFailed,
   component: Home,
@@ -92,8 +100,14 @@ function Home() {
 
 function Pending() {
   return (
-    <main className="grid h-full place-items-center">
-      <StarMark className="size-6 animate-pulse text-starlight" />
+    <main className="grid h-full place-items-center" aria-busy="true">
+      <div className="flex flex-col items-center gap-4 text-center">
+        <span className="relative grid size-12 place-items-center">
+          <span aria-hidden className="absolute inset-0 animate-ping rounded-full bg-starlight/10 [animation-duration:1.8s]" />
+          <StarMark className="size-6 animate-pulse text-starlight drop-shadow-[0_0_10px_oklch(0.86_0.12_85/0.7)]" />
+        </span>
+        <p className="text-[13px] tracking-[0.02em] text-ink-muted">Charting your stars…</p>
+      </div>
     </main>
   )
 }

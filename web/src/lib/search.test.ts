@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { fixtureGalaxy as g } from '#/test/fixture'
-import { buildLexDocs, fuseHits, matchClusters } from './search'
+import { buildLexDocs, fuseHits, matchClusters, semanticAbove, SEMANTIC_FLOOR } from './search'
 import { lensWeights } from './lens'
 
 describe('fuseHits', () => {
@@ -19,6 +19,13 @@ describe('fuseHits', () => {
     expect(both.lexicalOnly).toBe(false)
     expect(both.idx[0]).toBe(3)
     expect(both.idx).toContain(4)
+  })
+
+  it('has no results for a query the model finds nothing close to and keywords only half match', () => {
+    const noise = fuseHits(g, 'zxqvwyk plorbit', [1, 2, 3], [], { partialLexical: true })
+    expect(noise.idx).toEqual([])
+    // A full keyword match still stands on its own.
+    expect(fuseHits(g, 'olap', [1, 2, 3], []).idx).toEqual([1, 2, 3])
   })
 
   it('lets semantic results outrank a keyword list that matched only some words', () => {
@@ -68,5 +75,12 @@ describe('lensWeights', () => {
     expect(w[999]).toBe(1)
     expect(w[700]!).toBeGreaterThan(0)
     expect(w[700]!).toBeLessThan(w[900]!)
+  })
+})
+
+describe('semanticAbove', () => {
+  it('keeps the ranked prefix that clears the noise floor', () => {
+    expect(semanticAbove([4, 5, 6, 7], [0.81, 0.76, SEMANTIC_FLOOR - 0.01, 0.9])).toEqual([4, 5])
+    expect(semanticAbove([4, 5], [0.7, 0.69])).toEqual([])
   })
 })

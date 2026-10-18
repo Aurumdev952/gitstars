@@ -141,7 +141,7 @@ function TimelinePanel({ g }: { g: GalaxyIndex }) {
               </button>
             ))}
           </div>
-          <span aria-live="off" className={cn('tabular min-w-0 flex-1 truncate pl-1 text-[12px]', collapsed || readout ? 'text-ink-muted' : 'text-ink-faint/70')}>
+          <span aria-live="off" className={cn('tabular min-w-0 flex-1 truncate pl-1 text-[12px]', collapsed || readout ? 'text-ink-muted' : 'text-ink-faint')}>
             {collapsed ? ticker : (readout ?? (width >= MIN_HINT_WIDTH_PX ? 'Drag across the bars to filter by month' : null))}
           </span>
           {filters.starred && (

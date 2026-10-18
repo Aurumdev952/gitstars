@@ -32,6 +32,21 @@ const FRAME_MAX = 12
 const PARTIAL_LEXICAL_WEIGHT = 0.4
 
 /**
+ * Cosine under which a semantic neighbour is the model's noise floor rather than a match. The
+ * 256-d embeddinggemma vectors crowd every query into a narrow band: on the real export,
+ * gibberish ("zxqvwyk plorbit", "asdf qwer") tops out at 0.69 to 0.71 and topics the stars do not
+ * cover ("knitting patterns") at 0.67, while real topics lead with 0.75 to 0.85.
+ */
+export const SEMANTIC_FLOOR = 0.72
+
+/** The ranked semantic indices that clear the noise floor. */
+export function semanticAbove(idx: ArrayLike<number>, score: ArrayLike<number>, floor = SEMANTIC_FLOOR): number[] {
+  const out: number[] = []
+  for (let r = 0; r < idx.length && score[r]! >= floor; r++) out.push(idx[r]!)
+  return out
+}
+
+/**
  * Hybrid ranking: lexical and semantic lists fused by RRF, with an exact `owner/name` match, then
  * exact repo-name matches, pinned on top.
  */
@@ -43,6 +58,9 @@ export function fuseHits(
   opts: { partialLexical?: boolean } = {},
 ): SearchHits {
   const q = query.trim().toLowerCase()
+  // With nothing semantically close, a keyword list that only matched some words is noise too, so
+  // the query honestly has no results instead of a page of fuzzy look-alikes.
+  if (semantic && semantic.length === 0 && opts.partialLexical) lexical = []
   const pinned: number[] = []
   const exact = g.byFullName.get(q)
   if (exact !== undefined) pinned.push(exact)

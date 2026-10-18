@@ -1,4 +1,5 @@
 import { useMemo, useRef, useState } from 'react'
+import { NoMatches } from './NoMatches'
 import { useVirtualizer } from '@tanstack/react-virtual'
 import { motion } from 'motion/react'
 import { ArrowDown, ArrowUp } from 'lucide-react'
@@ -113,7 +114,7 @@ export function ListView() {
         ))}
       </div>
       <div ref={scroller} className="scrollbar-thin min-h-0 flex-1 overflow-y-auto [scrollbar-gutter:stable]">
-        {rows.length === 0 && <p className="px-5 py-10 text-center text-[13px] text-ink-faint">No stars match these filters.</p>}
+        {rows.length === 0 && <NoMatches inline />}
         <div className="relative w-full" style={{ height: v.getTotalSize() }}>
           {v.getVirtualItems().map((item) => {
             const i = rows[item.index]!

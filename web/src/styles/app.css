@@ -9,8 +9,8 @@
   --color-void: oklch(0.12 0.02 275);
   --color-ink: oklch(0.96 0.01 270);
   --color-ink-muted: oklch(0.74 0.02 270);
-  --color-ink-faint: oklch(0.56 0.02 270);
-  --color-glass: oklch(0.19 0.025 275 / 0.62);
+  --color-ink-faint: oklch(0.64 0.02 270);
+  --color-glass: oklch(0.17 0.025 275 / 0.74);
   --color-glass-solid: oklch(0.19 0.025 275);
   --color-glass-border: oklch(1 0 0 / 0.08);
   --color-starlight: oklch(0.86 0.12 85);

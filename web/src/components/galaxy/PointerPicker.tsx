@@ -41,7 +41,8 @@ export function PointerPicker() {
       if (!last || down || useGalaxyStore.getState().dragging) return
       const i = pickAt(last.x, last.y)
       actions.hover(i)
-      el.style.cursor = i === null ? '' : 'pointer'
+      // A star under the pointer is a link; empty space can be grabbed and turned (or panned flat).
+      el.style.cursor = i === null ? 'grab' : 'pointer'
     }
     const onMove = (e: PointerEvent) => {
       last = local(e)
@@ -57,13 +58,19 @@ export function PointerPicker() {
       el.style.cursor = ''
     }
     const onDown = (e: PointerEvent) => {
-      if (e.button === 0) down = local(e)
+      if (e.button !== 0) return
+      down = local(e)
+      el.style.cursor = 'grabbing'
     }
     // A drag released over the HUD or outside the window never reaches the canvas.
-    const clearDown = () => (down = null)
+    const clearDown = () => {
+      down = null
+      if (el.style.cursor === 'grabbing') el.style.cursor = 'grab'
+    }
     const onUp = (e: PointerEvent) => {
       const start = down
       down = null
+      if (el.style.cursor === 'grabbing') el.style.cursor = 'grab'
       if (!start || e.button !== 0) return
       const p = local(e)
       if (Math.hypot(p.x - start.x, p.y - start.y) > CLICK_SLOP_PX) return

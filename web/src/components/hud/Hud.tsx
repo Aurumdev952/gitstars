@@ -4,6 +4,8 @@ import { useGalaxyStore } from '#/state/store'
 import { handleKey } from '#/state/keymap'
 import { ClusterPanel } from './ClusterPanel'
 import { DiscoverButton } from './DiscoverButton'
+import { FirstRunHint } from './FirstRunHint'
+import { NoMatches } from './NoMatches'
 import { HoverTooltip } from './HoverTooltip'
 import { Legend } from './Legend'
 import { LensLegend } from './LensLegend'
@@ -47,6 +49,8 @@ export function Hud({ dataName }: { dataName: string }) {
           <LensLegend />
           <Timeline />
           <DiscoverButton />
+          <FirstRunHint />
+          <NoMatches />
         </>
       )}
       <ClusterPanel />

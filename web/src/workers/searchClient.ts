@@ -1,6 +1,6 @@
 import * as Comlink from 'comlink'
 import type { GalaxyIndex } from '#/lib/load'
-import { buildLexDocs, fuseHits, MAX_HITS } from '#/lib/search'
+import { buildLexDocs, fuseHits, MAX_HITS, semanticAbove } from '#/lib/search'
 import { lensWeights } from '#/lib/lens'
 import { useGalaxyStore } from '#/state/store'
 import type { ProbeResult, SearchApi } from './search.worker'
@@ -85,7 +85,7 @@ async function runQuery(g: GalaxyIndex, query: string | null, modelReady: boolea
   await sess.vectors
   const semantic = await sess.api.semantic(query, MAX_HITS)
   if (seq !== querySeq) return
-  setHits(fuseHits(g, query, lexical.idx, semantic.idx, { partialLexical: lexical.partial }))
+  setHits(fuseHits(g, query, lexical.idx, semanticAbove(semantic.idx, semantic.score), { partialLexical: lexical.partial }))
 }
 
 async function runLens(g: GalaxyIndex, query: string | null) {
@@ -149,5 +149,5 @@ export async function timeQuery(query: string) {
   const ready = useGalaxyStore.getState().model.state === 'ready'
   const semantic = ready ? await sess.api.semantic(query, MAX_HITS) : null
   const t2 = performance.now()
-  return { lexicalMs: t1 - t0, semanticMs: semantic ? t2 - t1 : null, hits: fuseHits(g, query, lexical.idx, semantic?.idx ?? null, { partialLexical: lexical.partial }).idx.slice(0, 10) }
+  return { lexicalMs: t1 - t0, semanticMs: semantic ? t2 - t1 : null, semanticTop: semantic ? Array.from(semantic.score.slice(0, 5)) : null, hits: fuseHits(g, query, lexical.idx, semantic ? semanticAbove(semantic.idx, semantic.score) : null, { partialLexical: lexical.partial }).idx.slice(0, 10) }
 }
