@@ -43,6 +43,9 @@ function RepoDetails({ g, i }: { g: GalaxyIndex; i: number }) {
   const galaxy = g.galaxies[g.galaxyOf[i]!]!
   const system = g.systems[g.systemOf[i]!]!
   const [owner, name] = splitFullName(r.fullName)
+  // The stack often repeats the language chip and a tag ("Go", "#go"); show each word once.
+  const shown = new Set([r.language ?? '', ...r.tags].map((t) => t.toLowerCase()))
+  const stack = r.stack.filter((t) => !shown.has(t.toLowerCase()))
   const now = Date.parse(g.data.meta.generatedAt)
   const heading = useRef<HTMLHeadingElement>(null)
   const body = useRef<HTMLDivElement>(null)
@@ -88,12 +91,18 @@ function RepoDetails({ g, i }: { g: GalaxyIndex; i: number }) {
         </h2>
 
         <div className="mt-3 flex flex-wrap items-center gap-1.5 text-[11.5px]">
-          <Chip>{r.kind}</Chip>
+          <FilterChip on={filters.kind.includes(r.kind)} what={`${r.kind} stars`} onToggle={() => setFilters(toggleValue(filters, 'kind', r.kind))}>
+            {r.kind}
+          </FilterChip>
           {r.language && (
-            <Chip>
+            <FilterChip
+              on={filters.lang.includes(r.language)}
+              what={`${r.language} stars`}
+              onToggle={() => setFilters(toggleValue(filters, 'lang', r.language!))}
+            >
               <span aria-hidden className="mr-1.5 inline-block size-1.5 rounded-full bg-ink-muted" />
               {r.language}
-            </Chip>
+            </FilterChip>
           )}
           {r.archived && <Chip className="border-amber-200/20 text-amber-100/80">archived</Chip>}
         </div>
@@ -127,32 +136,23 @@ function RepoDetails({ g, i }: { g: GalaxyIndex; i: number }) {
           </Fact>
           {r.quality !== null && (
             <Fact label="Summary quality">
+              <span className="tabular text-ink" title="The judge model's score for this summary">
+                {Math.round(r.quality * 100)}
+                <span className="text-ink-faint"> / 100</span>
+              </span>
               <Meter value={r.quality} tone="starlight" />
             </Fact>
           )}
         </dl>
 
-        {(r.tags.length > 0 || r.stack.length > 0) && (
+        {(r.tags.length > 0 || stack.length > 0) && (
           <div className="mt-5 flex flex-wrap gap-1.5 text-[11.5px]">
-            {r.tags.map((t) => {
-              const on = filters.tag.includes(t)
-              return (
-                <button
-                  key={`t-${t}`}
-                  type="button"
-                  aria-pressed={on}
-                  title={on ? `Stop filtering by #${t}` : `Show only stars tagged #${t}`}
-                  onClick={() => setFilters(toggleValue(filters, 'tag', t))}
-                  className={cn(
-                    'inline-flex items-center rounded-full border px-2.5 py-[3px] transition-colors',
-                    on ? 'border-starlight/50 bg-starlight/[0.12] text-ink' : 'border-glass-border bg-white/[0.03] text-ink-muted hover:border-white/15 hover:text-ink',
-                  )}
-                >
-                  #{t}
-                </button>
-              )
-            })}
-            {r.stack.map((t) => (
+            {r.tags.map((t) => (
+              <FilterChip key={`t-${t}`} on={filters.tag.includes(t)} what={`stars tagged #${t}`} onToggle={() => setFilters(toggleValue(filters, 'tag', t))}>
+                #{t}
+              </FilterChip>
+            ))}
+            {stack.map((t) => (
               <Chip key={`s-${t}`} className="text-ink-faint">
                 {t}
               </Chip>
@@ -212,6 +212,23 @@ function Chip({ children, className }: { children: React.ReactNode; className?: 
     <span className={cn('inline-flex items-center rounded-full border border-glass-border bg-white/[0.03] px-2.5 py-[3px] text-ink-muted', className)}>
       {children}
     </span>
+  )
+}
+
+function FilterChip({ on, what, onToggle, children }: { on: boolean; what: string; onToggle: () => void; children: React.ReactNode }) {
+  return (
+    <button
+      type="button"
+      aria-pressed={on}
+      title={on ? `Stop showing only ${what}` : `Show only ${what}`}
+      onClick={onToggle}
+      className={cn(
+        'inline-flex items-center rounded-full border px-2.5 py-[3px] transition-colors',
+        on ? 'border-starlight/50 bg-starlight/[0.12] text-ink' : 'border-glass-border bg-white/[0.03] text-ink-muted hover:border-white/15 hover:text-ink',
+      )}
+    >
+      {children}
+    </button>
   )
 }
 

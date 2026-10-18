@@ -12,6 +12,7 @@ import { Dialog, DialogContent, DialogTitle } from '#/components/ui/dialog'
 import { Kbd } from '#/components/ui/kbd'
 import { cn } from '#/lib/utils'
 import { ClusterDot } from './Legend'
+import { useOccluder } from './useOccluder'
 
 const TYPE_DEBOUNCE_MS = 110
 const PREVIEW_DEBOUNCE_MS = 150
@@ -23,8 +24,11 @@ export function SearchPalette() {
   const open = useGalaxyStore((s) => s.overlay === 'palette')
   const { setOverlay } = useGalaxyStore((s) => s.actions)
   const committed = useRef(false)
+  const content = useRef<HTMLDivElement>(null)
+  useOccluder(content)
 
   useEffect(() => {
+    sceneBus.invalidate()
     if (open) {
       committed.current = false
       sceneBus.director?.saveView()
@@ -49,6 +53,7 @@ export function SearchPalette() {
   return (
     <Dialog open={open} onOpenChange={(o) => !o && close('cancel')}>
       <DialogContent
+        ref={content}
         aria-describedby={undefined}
         overlayClassName="bg-[oklch(0.08_0.02_275/0.18)]"
         className="top-[12vh] w-[min(660px,calc(100vw-2rem))] overflow-hidden"
@@ -209,15 +214,15 @@ function PaletteBody({ onClose }: { onClose: (how: 'commit' | 'cancel') => void 
                 >
                   <ClusterDot color={sys.color.css} className="mt-[7px] size-1.5" />
                   <span className="min-w-0 flex-1">
-                    <span className="block truncate font-mono text-[13px]">
-                      <span className="text-ink-faint">{owner}/</span>
-                      <span className="text-ink">{name}</span>
+                    <span className="flex items-baseline gap-3">
+                      <span className="min-w-0 shrink truncate font-mono text-[13px]">
+                        <span className="text-ink-faint">{owner}/</span>
+                        <span className="text-ink">{name}</span>
+                      </span>
+                      <span className="ml-auto max-w-[45%] min-w-0 shrink-[2] truncate text-right text-[11.5px] text-ink-faint">{sys.name}</span>
+                      <span className="tabular shrink-0 text-[11.5px] text-ink-muted">★ {formatCompact(r.stars)}</span>
                     </span>
-                    <span className="mt-0.5 block truncate text-[12.5px] text-ink-faint">{r.oneLiner}</span>
-                  </span>
-                  <span className="mt-0.5 shrink-0 text-right text-[11.5px] text-ink-faint">
-                    <span className="tabular block text-ink-muted">★ {formatCompact(r.stars)}</span>
-                    <span className="block">{sys.name}</span>
+                    <span className="mt-0.5 block truncate text-[12.5px] text-ink-faint">{r.oneLiner || r.description}</span>
                   </span>
                 </CommandItem>
               )

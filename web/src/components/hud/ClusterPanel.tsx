@@ -4,6 +4,7 @@ import { X } from 'lucide-react'
 import { useGalaxyStore } from '#/state/store'
 import type { ClusterNode, GalaxyIndex } from '#/lib/load'
 import { formatCompact, formatCount, splitFullName } from '#/lib/format'
+import { toggleValue, type Filters } from '#/lib/filters'
 import { cn } from '#/lib/utils'
 import { ClusterDot } from './Legend'
 import { useOccluder } from './useOccluder'
@@ -46,11 +47,14 @@ function mix(members: readonly number[], key: (i: number) => string | null) {
 }
 
 function ClusterDetails({ g, c }: { g: GalaxyIndex; c: ClusterNode }) {
-  const { focus, select, hover, hoverCluster } = useGalaxyStore((s) => s.actions)
+  const { focus, select, hover, hoverCluster, setFilters } = useGalaxyStore((s) => s.actions)
+  const filters = useGalaxyStore((s) => s.filters)
   const hovered = useGalaxyStore((s) => s.hovered)
   const visible = useGalaxyStore((s) => s.filtered?.visible ?? null)
   const parent = c.parentId ? g.clusterById.get(c.parentId) : undefined
   const children = c.level === 0 ? g.systems.filter((s) => s.parentId === c.id) : []
+  // System bars compare systems with each other; against the galaxy total the largest is a sliver.
+  const largest = Math.max(1, ...children.map((s) => s.members.length))
   const heading = useRef<HTMLHeadingElement>(null)
   const list = useRef<HTMLUListElement>(null)
 
@@ -125,8 +129,8 @@ function ClusterDetails({ g, c }: { g: GalaxyIndex; c: ClusterNode }) {
         )}
 
         <div className="mt-5 grid grid-cols-2 gap-5 border-t border-glass-border pt-4">
-          <MixBars title="Kinds" rows={kinds} total={total} color={c.color.css} />
-          <MixBars title="Languages" rows={languages} total={total} color={c.color.css} />
+          <MixBars title="Kinds" rows={kinds} total={total} color={c.color.css} active={filters.kind} onToggle={(k) => setFilters(toggleValue(filters, 'kind', k as Filters['kind'][number]))} />
+          <MixBars title="Languages" rows={languages} total={total} color={c.color.css} active={filters.lang} onToggle={(k) => setFilters(toggleValue(filters, 'lang', k))} />
         </div>
 
         {children.length > 0 && (
@@ -146,7 +150,7 @@ function ClusterDetails({ g, c }: { g: GalaxyIndex; c: ClusterNode }) {
                     <ClusterDot color={s.color.css} className="size-1.5" />
                     <span className="min-w-0 flex-1 truncate">{s.name}</span>
                     <span className="h-[3px] w-14 overflow-hidden rounded-full bg-white/[0.07]">
-                      <span className="block h-full rounded-full" style={{ width: `${(s.members.length / total) * 100}%`, background: s.color.css }} />
+                      <span className="block h-full rounded-full" style={{ width: `${(s.members.length / largest) * 100}%`, background: s.color.css }} />
                     </span>
                     <span className="tabular w-8 text-right font-mono text-[11px] text-ink-faint">{s.members.length}</span>
                   </button>
@@ -195,24 +199,49 @@ function ClusterDetails({ g, c }: { g: GalaxyIndex; c: ClusterNode }) {
   )
 }
 
-function MixBars({ title, rows, total, color }: { title: string; rows: [string, number][]; total: number; color: string }) {
+function MixBars({
+  title,
+  rows,
+  total,
+  color,
+  active,
+  onToggle,
+}: {
+  title: string
+  rows: [string, number][]
+  total: number
+  color: string
+  active: readonly string[]
+  onToggle: (key: string) => void
+}) {
   const top = rows.slice(0, 5)
   const rest = rows.slice(5).reduce((n, [, c]) => n + c, 0)
   return (
     <div className="min-w-0">
       <h3 className="text-[11.5px] text-ink-faint">{title}</h3>
       <ul className="mt-2 space-y-1.5">
-        {top.map(([k, n]) => (
-          <li key={k} className="text-[12px]">
-            <div className="flex items-baseline justify-between gap-2">
-              <span className="truncate text-ink-muted">{k}</span>
-              <span className="tabular font-mono text-[10.5px] text-ink-faint">{Math.round((n / total) * 100)}%</span>
-            </div>
-            <span className="mt-1 block h-[3px] overflow-hidden rounded-full bg-white/[0.06]">
-              <span className="block h-full rounded-full opacity-80" style={{ width: `${(n / total) * 100}%`, background: color }} />
-            </span>
-          </li>
-        ))}
+        {top.map(([k, n]) => {
+          const on = active.includes(k)
+          return (
+            <li key={k} className="text-[12px]">
+              <button
+                type="button"
+                aria-pressed={on}
+                title={on ? `Stop showing only ${k}` : `Show only ${k} stars`}
+                onClick={() => onToggle(k)}
+                className="group -mx-1.5 block w-[calc(100%+0.75rem)] rounded-md px-1.5 py-0.5 text-left transition-colors hover:bg-white/[0.04]"
+              >
+                <span className="flex items-baseline justify-between gap-2">
+                  <span className={cn('truncate', on ? 'text-starlight' : 'text-ink-muted group-hover:text-ink')}>{k}</span>
+                  <span className="tabular font-mono text-[10.5px] text-ink-faint">{Math.round((n / total) * 100)}%</span>
+                </span>
+                <span className="mt-1 block h-[3px] overflow-hidden rounded-full bg-white/[0.06]">
+                  <span className="block h-full rounded-full opacity-80" style={{ width: `${(n / total) * 100}%`, background: color }} />
+                </span>
+              </button>
+            </li>
+          )
+        })}
         {rest > 0 && <li className="text-[11px] text-ink-faint">+{rows.length - 5} more · {Math.round((rest / total) * 100)}%</li>}
       </ul>
     </div>
