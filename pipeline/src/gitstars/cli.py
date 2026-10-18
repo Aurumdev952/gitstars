@@ -20,6 +20,10 @@ from gitstars.db import DB
 from gitstars.embed import embed_freshness
 from gitstars.extract import assemble
 from gitstars.llm.openrouter import read_quota
+from gitstars.misfits import SAMPLE as MISFIT_SAMPLE
+from gitstars.misfits import SEED as MISFIT_SEED
+from gitstars.misfits import VOTES as MISFIT_VOTES
+from gitstars.misfits import run_misfits
 from gitstars.naming import NAME_RESERVE, cluster_name
 from gitstars.stages import STAGES
 from gitstars.summarize import job_for, load_summary
@@ -219,6 +223,24 @@ def coherence() -> None:
     finally:
         ctx.db.close()
     _print_result("coherence", result, time.monotonic() - t0)
+
+
+@app.command()
+def misfits(
+    n: Annotated[int, typer.Option("--n", help="Sample size, drawn with --seed from the sorted repo names.")] = MISFIT_SAMPLE,
+    seed: int = MISFIT_SEED,
+    votes: Annotated[int, typer.Option("--votes", help="Judgements per repo; the majority counts.")] = MISFIT_VOTES,
+    out: Annotated[str | None, typer.Option("--out", help="Also write the verdicts to this JSON file.")] = None,
+    label: Annotated[str, typer.Option("--label", help="Key the verdicts are stored under in the DB.")] = "latest",
+) -> None:
+    """Local Gemma judges whether each sampled repo (plus the watched ones) belongs in its assigned system."""
+    ctx = _ctx()
+    t0 = time.monotonic()
+    try:
+        result = asyncio.run(run_misfits(ctx, n=n, seed=seed, votes=votes, out=out, label=label))
+    finally:
+        ctx.db.close()
+    _print_result("misfits", result, time.monotonic() - t0)
 
 
 @app.command()
