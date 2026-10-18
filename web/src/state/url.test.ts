@@ -53,4 +53,12 @@ describe('search params', () => {
     expect(s.q).toBeUndefined()
     expect(s.cluster).toBeUndefined()
   })
+
+  it('reads the timeline cursor from ?t= and drops one outside [0, 1]', () => {
+    expect(parse(defaultParseSearch('?t=0.3')).t).toBe(0.3)
+    expect(parse(defaultParseSearch('?t=0')).t).toBe(0)
+    expect(parse(defaultParseSearch('?t=1.5')).t).toBeUndefined()
+    expect(parse(defaultParseSearch('?t=soon')).t).toBeUndefined()
+    expect(parse({}).t).toBeUndefined()
+  })
 })

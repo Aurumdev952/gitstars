@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
-import { Box, Compass, Home, Keyboard, List, Map as MapIcon, Search, Sparkles, SlidersHorizontal, X } from 'lucide-react'
+import { Box, Compass, History, Home, Keyboard, List, Map as MapIcon, Search, Sparkles, SlidersHorizontal, X } from 'lucide-react'
 import { useGalaxyStore, type ModelStatus } from '#/state/store'
 import { commands } from '#/state/commands'
 import { activeFacets } from '#/lib/filters'
@@ -65,6 +65,7 @@ function PaletteBody({ onClose }: { onClose: (how: 'commit' | 'cancel') => void 
   const hits = useGalaxyStore((s) => s.hits)
   const model = useGalaxyStore((s) => s.model)
   const view = useGalaxyStore((s) => s.view)
+  const timelineOpen = useGalaxyStore((s) => s.timeline.open)
   const filters = useGalaxyStore((s) => s.filters)
   const lensQuery = useGalaxyStore((s) => s.lensQuery)
   const { setQuery, select, focus, hover } = useGalaxyStore((s) => s.actions)
@@ -108,6 +109,7 @@ function PaletteBody({ onClose }: { onClose: (how: 'commit' | 'cancel') => void 
       : { id: 'flat', icon: <MapIcon className="size-4" />, label: 'Flatten into a map', hint: 'f', run: commands.toggleFlat },
     { id: 'list', icon: <List className="size-4" />, label: view === 'list' ? 'Back to the galaxy' : 'Browse as a list', hint: 'l', run: commands.toggleList },
     { id: 'home', icon: <Home className="size-4" />, label: 'Fly home', hint: 'g', run: commands.home },
+    { id: 'timeline', icon: <History className="size-4" />, label: timelineOpen ? 'Close the timeline' : 'Timeline: replay your stars', hint: 't', run: commands.toggleTimeline },
   )
   if (activeFacets(filters).length > 0)
     actions.push({ id: 'clear-filters', icon: <SlidersHorizontal className="size-4" />, label: 'Clear all filters', run: commands.clearFilters })

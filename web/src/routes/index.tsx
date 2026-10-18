@@ -8,6 +8,7 @@ import { bindNavigate, filtersFromSearch, searchDefaults, searchSchema } from '#
 import { startSearchRunner, warmModel } from '#/workers/searchClient'
 import { seedDiscovery } from '#/state/commands'
 import { introMode, isDeepLink } from '#/lib/intro'
+import { timeline } from '#/state/timeline'
 
 // three, R3F and the post chain load in their own chunk, in parallel with galaxy.json.
 const GalaxyCanvas = lazy(() => import('#/components/galaxy/GalaxyCanvas'))
@@ -74,6 +75,8 @@ function Home() {
   }, [galaxy, search])
 
   useEffect(() => seedDiscovery(search.seed ?? null), [search.seed])
+
+  useEffect(() => timeline.syncFromUrl(search.t), [search.t])
 
   return (
     <main className="h-full">

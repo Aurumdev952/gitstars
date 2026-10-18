@@ -42,6 +42,8 @@ export const searchSchema = z.object({
     .refine(([a, b]) => a <= b)
     .optional()
     .catch(undefined),
+  // Present only while the timeline is open; its absence, not a default, means closed.
+  t: z.coerce.number().min(0).max(1).optional().catch(undefined),
   data: z.string().optional().catch(undefined),
   debug: flag,
   freeze: flag,

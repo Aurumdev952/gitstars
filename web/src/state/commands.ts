@@ -5,6 +5,7 @@ import { mulberry32 } from '#/lib/random'
 import { spatialNeighbor, type Direction, type ScreenStar } from '#/lib/spatialNav'
 import { useGalaxyStore } from './store'
 import { navigateSearch } from './url'
+import { timeline } from './timeline'
 
 // User-level actions shared by the keyboard map, the palette and the HUD buttons.
 
@@ -58,6 +59,8 @@ export const commands = {
 
   toggleFlat: () => get().actions.setView(get().view === 'flat' ? '3d' : 'flat'),
   toggleList: () => get().actions.setView(get().view === 'list' ? '3d' : 'list'),
+  toggleTimeline: () => timeline.toggle(),
+  playPause: () => timeline.playPause(),
 
   forgottenStar() {
     const s = get()

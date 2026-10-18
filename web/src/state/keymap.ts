@@ -60,6 +60,20 @@ export const KEYMAP: Binding[] = [
   { keys: ['g'], label: 'Home', group: 'Navigate', match: plain('g'), run: () => commands.home() },
   { keys: ['f'], label: 'Flat map', group: 'View', match: plain('f'), run: () => commands.toggleFlat() },
   { keys: ['l'], label: 'List view', group: 'View', match: plain('l'), run: () => commands.toggleList() },
+  {
+    keys: ['t'],
+    label: 'Timeline',
+    group: 'View',
+    match: (e) => plain('t')(e) && useGalaxyStore.getState().view !== 'list',
+    run: () => commands.toggleTimeline(),
+  },
+  {
+    keys: ['Space'],
+    label: 'Play or pause the timeline',
+    group: 'View',
+    match: (e) => plain(' ')(e) && useGalaxyStore.getState().timeline.open,
+    run: () => commands.playPause(),
+  },
   { keys: ['?'], label: 'Keyboard shortcuts', group: 'View', match: plain('?'), run: () => commands.openShortcuts() },
 ]
 

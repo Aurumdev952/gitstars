@@ -6,6 +6,7 @@ import { director } from './Director'
 import { pickAt } from './PointerPicker'
 import { sceneBus, starScreenPosition } from './sceneBus'
 import { probeSearch, timeQuery } from '#/workers/searchClient'
+import { timeline } from '#/state/timeline'
 
 type DebugApi = {
   ready: boolean
@@ -26,6 +27,7 @@ type DebugApi = {
   timeQuery: typeof timeQuery
   store: typeof useGalaxyStore
   director: typeof director
+  timeline: typeof timeline
   bus: typeof sceneBus
   scene: Scene
 }
@@ -91,6 +93,7 @@ export function DebugHooks() {
       timeQuery,
       store: useGalaxyStore,
       director,
+      timeline,
       bus: sceneBus,
       scene,
     }

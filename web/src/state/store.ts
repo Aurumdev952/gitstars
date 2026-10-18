@@ -23,6 +23,11 @@ export type Settings = {
   ghosts: boolean
 }
 
+export type PlaySpeed = 0.5 | 1 | 2
+
+/** The cursor itself lives outside React, in `state/timeline.ts`, so scrubbing never re-renders the scene. */
+export type TimelineState = { open: boolean; playing: boolean; speed: PlaySpeed }
+
 /** At most one modal surface is open; Esc closes it before stepping out of the scene. */
 export type Overlay = 'none' | 'palette' | 'filters' | 'settings' | 'shortcuts'
 
@@ -65,6 +70,7 @@ export type GalaxyStore = UrlMirror & {
   discovered: number | null
   settings: Settings
   intro: IntroPhase
+  timeline: TimelineState
   actions: {
     setGalaxy(g: GalaxyIndex): void
     mirrorUrl(m: UrlMirror): void
@@ -85,6 +91,7 @@ export type GalaxyStore = UrlMirror & {
     setCameraBusy(b: boolean): void
     setDragging(b: boolean): void
     setIntro(p: IntroPhase): void
+    setTimeline(p: Partial<TimelineState>): void
   }
 }
 
@@ -122,6 +129,7 @@ export const useGalaxyStore = create<GalaxyStore>()(
       bloom: true,
       ghosts: true,
     },
+    timeline: { open: false, playing: false, speed: 1 },
     actions: {
       setGalaxy: (galaxy) =>
         set({ galaxy, hovered: null, hits: null, discovered: null, filtered: applyFilters(filterColumns(galaxy), get().filters) }),
@@ -158,6 +166,7 @@ export const useGalaxyStore = create<GalaxyStore>()(
       setIntro: (intro) => {
         if (get().intro !== intro) set({ intro })
       },
+      setTimeline: (p) => set({ timeline: { ...get().timeline, ...p } }),
     },
   })),
 )
