@@ -98,7 +98,7 @@ function SearchCluster() {
       style={{ '--hud-i': 0 } as CSSProperties}
       className={cn(
         'hud-enter fixed top-4 left-1/2 z-20 flex w-[min(440px,calc(100vw-2rem))] -translate-x-1/2 flex-col items-center gap-2 max-[1100px]:top-[76px]',
-        sidePanel && 'max-[1100px]:left-[calc((100vw-436px)/2)] max-[1100px]:w-[min(440px,calc(100vw-468px))]',
+        sidePanel && 'max-[1320px]:left-[calc((100vw-436px)/2)] max-[1320px]:w-[min(440px,calc(100vw-468px))]',
       )}
     >
       <div className="glass flex h-10 w-full items-center rounded-full text-[13.5px] text-ink-faint">
