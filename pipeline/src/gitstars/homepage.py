@@ -13,7 +13,7 @@ from gitstars.domain import HomepageDoc
 MAX_BYTES = 2 * 1024 * 1024
 TEXT_CHARS = 2000
 MIRROR_HOSTS = (
-    "github.com", "www.github.com", "npmjs.com", "www.npmjs.com", "npmjs.org", "pypi.org", "pypi.python.org",
+    "github.com", "www.github.com", "npmjs.com", "www.npmjs.com", "npmjs.org", "npm.im", "www.npm.im", "pypi.org", "pypi.python.org",
     "crates.io", "docs.rs", "lib.rs", "pkg.go.dev", "rubygems.org", "packagist.org", "nuget.org", "www.nuget.org",
     "hub.docker.com", "gitlab.com", "marketplace.visualstudio.com", "chromewebstore.google.com",
     "chrome.google.com", "addons.mozilla.org", "huggingface.co", "x.com", "twitter.com", "youtube.com",
@@ -53,8 +53,12 @@ def extract(url: str, html: str) -> HomepageDoc:
 
 
 class HomepageFetcher:
-    def __init__(self, concurrency: int = 16):
+    # Not the plan's 16: at 16-way the local stub resolver answered ~90% of lookups with a spurious
+    # "Name or service not known"; at 6-way about 5% failed, mostly dead domains.
+    def __init__(self, concurrency: int = 6):
         self.client = httpx.AsyncClient(
+            # IPv4 only: this host has no IPv6 route and httpx doesn't fall back the way curl does.
+            transport=httpx.AsyncHTTPTransport(local_address="0.0.0.0", retries=1),
             timeout=httpx.Timeout(10.0),
             follow_redirects=True,
             headers={"User-Agent": "Mozilla/5.0 (X11; Linux x86_64) gitstars/0.1", "Accept": "text/html,*/*;q=0.5"},
@@ -84,6 +88,6 @@ class HomepageFetcher:
                                 break
                         body = b"".join(chunks)[:MAX_BYTES].decode(resp.encoding or "utf-8", errors="replace")
             except (httpx.HTTPError, TimeoutError, UnicodeError) as exc:
-                return None, type(exc).__name__
+                return None, f"{type(exc).__name__}: {str(exc)[:120]}"
         doc = await asyncio.to_thread(extract, url, body)
         return doc, None

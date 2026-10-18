@@ -200,7 +200,10 @@ class Decider:
         await self.client.aclose()
 
     async def decide(self, req: DecisionRequest) -> tuple[DecisionResponse, dict[str, Any]]:
-        resp = await self.client.post(DECISIONS_URL, headers=self._headers, json=req.model_dump(mode="json"))
+        try:
+            resp = await self.client.post(DECISIONS_URL, headers=self._headers, json=req.model_dump(mode="json"))
+        except httpx.HTTPError as exc:
+            raise DecisionError(f"decisions transport: {type(exc).__name__}") from exc
         if resp.status_code >= 400:
             raise DecisionError(f"decisions http {resp.status_code}: {resp.text[:300]}")
         raw = resp.json()
