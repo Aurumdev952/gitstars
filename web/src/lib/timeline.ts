@@ -158,7 +158,6 @@ export function starredHistogram(
   return { months, galaxies, counts, totals, max, edges }
 }
 
-/** The month a starred-range fraction falls in. */
 export function monthAtFraction(h: StarredHistogram, f: number): number {
   let lo = 0
   let hi = h.months.length - 1
