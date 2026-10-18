@@ -34,6 +34,7 @@ export type Embedder = {
  */
 export async function loadEmbedder(model: string, dim: number, onProgress: (p: ModelProgress) => void): Promise<Embedder> {
   const tf = await import('@huggingface/transformers')
+  await preferVendored(tf, model)
   const gpu = (globalThis.navigator as Navigator & { gpu?: { requestAdapter(): Promise<unknown> } }).gpu
   const adapter = gpu ? await gpu.requestAdapter().catch(() => null) : null
   const devices: Device[] = adapter ? ['webgpu', 'wasm'] : ['wasm']
@@ -71,6 +72,35 @@ export async function loadEmbedder(model: string, dim: number, onProgress: (p: M
     }
   }
   throw lastError instanceof Error ? lastError : new Error(String(lastError))
+}
+
+/**
+ * Points transformers.js and ORT at `public/models/` when the model is vendored there, so nothing
+ * goes to the Hub or the jsDelivr CDN; otherwise leaves the remote defaults alone.
+ */
+async function preferVendored(tf: typeof import('@huggingface/transformers'), model: string): Promise<void> {
+  const base = new URL(import.meta.env.BASE_URL, globalThis.location.href)
+  // fetch-model.ts writes config.json last, so a readable one means every file is complete. Parsing
+  // it rules out an SPA fallback that answers any path with index.html.
+  const res = await fetch(new URL(`${VENDORED.models}${model}/config.json`, base)).catch(() => null)
+  const vendored = res?.ok && (await res.json().then(() => true, () => false))
+  if (!vendored) return
+  // The vendored files stand in for the Hub instead of going through localModelPath. For local
+  // files transformers.js reads sizes with a full GET whose body it never drains, which holds
+  // Chrome's HTTP cache lock on the weights and stalls the real download until the lock times out
+  // (about 20 s). The remote path reads sizes with a one-byte Range request.
+  tf.env.allowLocalModels = false
+  tf.env.allowRemoteModels = true
+  tf.env.remoteHost = new URL(VENDORED.models, base).href
+  tf.env.remotePathTemplate = '{model}/'
+  const paths = tf.env.backends.onnx.wasm?.wasmPaths
+  // transformers.js has already chosen its build and set CDN URLs; keep the file names, swap the host.
+  if (paths && typeof paths === 'object') {
+    for (const k of ['mjs', 'wasm'] as const) {
+      const name = paths[k]?.toString().split('/').pop()
+      if (name) paths[k] = new URL(`${VENDORED.ort}${name}`, base).href
+    }
+  }
 }
 
 /** Keeps the leading `dim` of each `width`-wide row and L2-normalizes it (Matryoshka truncation). */
