@@ -1,144 +1,156 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
-import { Line } from '@react-three/drei'
+import { useEffect, useMemo, useRef } from 'react'
 import { useFrame } from '@react-three/fiber'
-import { Vector3 } from 'three'
-import type { Line2 } from 'three-stdlib'
 import type { GalaxyIndex } from '#/lib/load'
 import { positionAt } from '#/lib/layout'
 import { useGalaxyStore } from '#/state/store'
 import { currentLayout, sceneBus } from './sceneBus'
+import { RibbonBuffer, blankSegment, ribbonMaterial } from './ribbons'
 
 const SEGMENTS = 20
-const FADE_S = 0.15
+const MAX_ARCS = 16
 const STAGGER_S = 0.04
-const FLOW_SPEED = 0.5
-// HDR gains so the travelling pulses (FLOW_GAIN times their opacity) cross the bloom threshold
-// while the base arcs stay just under it. Baked into the vertex colours: drei's Line forces its
-// colour to white whenever vertexColors is set.
-const ARC_GAIN = 1.4
-const FLOW_GAIN = 2.4
+// HDR gains: the travelling pulse crosses the bloom threshold while the base arc stays under it.
+const ARC_GAIN = 1.3
+// Less than the spec's 0.25: with eight arcs all bowing the same way, 0.25 coils into a whirl.
+const BOW = 0.16
 
-type RGB = [number, number, number]
-type Arc = { j: number; cos: number; rank: number; points: Vector3[]; colors: RGB[]; flowColors: RGB[] }
+type V3 = [number, number, number]
 
-/** Quadratic arc bowed toward the viewer: control = mid + normalize(view × (b − a)) · |b − a| · 0.25. */
-export function arcPoints(a: Vector3, b: Vector3, viewDir: Vector3, segments = SEGMENTS): Vector3[] {
-  const ab = b.clone().sub(a)
-  const len = ab.length()
-  const side = new Vector3().crossVectors(viewDir, ab)
-  if (side.lengthSq() < 1e-8) side.set(0, 1, 0)
-  const ctrl = a.clone().add(b).multiplyScalar(0.5).add(side.normalize().multiplyScalar(len * 0.25))
-  const pts: Vector3[] = []
-  for (let k = 0; k <= segments; k++) {
-    const t = k / segments
-    const u = 1 - t
-    pts.push(new Vector3(u * u * a.x + 2 * u * t * ctrl.x + t * t * b.x, u * u * a.y + 2 * u * t * ctrl.y + t * t * b.y, u * u * a.z + 2 * u * t * ctrl.z + t * t * b.z))
-  }
-  return pts
+/** Point `t` of the quadratic arc a → b bowed toward the viewer by |b − a| · 0.25. */
+export function arcPoint(a: V3, ctrl: V3, b: V3, t: number, out: V3): V3 {
+  const u = 1 - t
+  for (let c = 0; c < 3; c++) out[c] = u * u * a[c]! + 2 * u * t * ctrl[c]! + t * t * b[c]!
+  return out
 }
 
-function buildArcs(g: GalaxyIndex, i: number, flat: number): Arc[] {
+/** Control point: mid + normalize(viewDir × (b − a)) · |b − a| · BOW, so arcs always bow visibly. */
+export function arcControl(a: V3, b: V3, viewDir: V3, out: V3): V3 {
+  const ab = [b[0] - a[0], b[1] - a[1], b[2] - a[2]]
+  const len = Math.hypot(ab[0]!, ab[1]!, ab[2]!)
+  let sx = viewDir[1] * ab[2]! - viewDir[2] * ab[1]!
+  let sy = viewDir[2] * ab[0]! - viewDir[0] * ab[2]!
+  let sz = viewDir[0] * ab[1]! - viewDir[1] * ab[0]!
+  const sl = Math.hypot(sx, sy, sz)
+  if (sl < 1e-6) [sx, sy, sz] = [0, 1, 0]
+  else [sx, sy, sz] = [sx / sl, sy / sl, sz / sl]
+  out[0] = (a[0] + b[0]) / 2 + sx * len * BOW
+  out[1] = (a[1] + b[1]) / 2 + sy * len * BOW
+  out[2] = (a[2] + b[2]) / 2 + sz * len * BOW
+  return out
+}
+
+const seg = blankSegment()
+const pa: V3 = [0, 0, 0]
+const pb: V3 = [0, 0, 0]
+const ctrl: V3 = [0, 0, 0]
+const p0: V3 = [0, 0, 0]
+const p1: V3 = [0, 0, 0]
+const view: V3 = [0, 0, 0]
+const cA: V3 = [0, 0, 0]
+const cB: V3 = [0, 0, 0]
+
+/** Writes the anchor's kNN arcs, in the layout at `flat`, as ribbon segments; returns the count. */
+function writeArcs(buf: RibbonBuffer, g: GalaxyIndex, i: number, flat: number): number {
   const layout = { ...currentLayout(), flat }
-  const a = new Vector3(...positionAt(g.attrs, i, layout, [0, 0, 0]))
+  positionAt(g.attrs, i, layout, pa)
   const cam = sceneBus.camera
-  const viewDir = cam ? a.clone().sub(cam.position).normalize() : new Vector3(0, 0, -1)
-  const src = g.attrs.color.subarray(i * 3, i * 3 + 3)
-  return g.repos[i]!.neighbors.map(([j, cos], rank) => {
-    const b = new Vector3(...positionAt(g.attrs, j, layout, [0, 0, 0]))
-    const dst = g.attrs.color.subarray(j * 3, j * 3 + 3)
-    const points = arcPoints(a, b, viewDir)
-    const colors = points.map((_, k): [number, number, number] => {
-      const t = k / SEGMENTS
-      // Whiter at the source so the arcs read as leaving the hovered star.
-      const w = 0.55 * (1 - t)
-      return [0, 1, 2].map((c) => (src[c]! * (1 - t) + dst[c]! * t) * (1 - w) + w) as [number, number, number]
-    })
-    const gain = (k: number) => colors.map((c) => c.map((v) => v * k) as RGB)
-    return { j, cos, rank, points, colors: gain(ARC_GAIN), flowColors: gain(FLOW_GAIN) }
+  if (cam) {
+    const dx = pa[0] - cam.position.x, dy = pa[1] - cam.position.y, dz = pa[2] - cam.position.z
+    const l = Math.hypot(dx, dy, dz) || 1
+    view[0] = dx / l
+    view[1] = dy / l
+    view[2] = dz / l
+  } else [view[0], view[1], view[2]] = [0, 0, -1]
+  const col = g.attrs.color
+  let k = 0
+  g.repos[i]!.neighbors.slice(0, MAX_ARCS).forEach(([j, cos], rank) => {
+    positionAt(g.attrs, j, layout, pb)
+    arcControl(pa, pb, view, ctrl)
+    const weight = Math.max(0, (cos - 0.35) / 0.65)
+    seg.widthPx = 1.3 + 2.4 * weight
+    seg.alpha = 0.3 + 0.6 * weight
+    seg.drawDelay = rank * STAGGER_S
+    seg.galaxy = -1
+    seg.fadeRadius = 0
+    seg.phase = rank * 0.137
+    seg.delayA = seg.delayB = 0
+    seg.starredA = g.attrs.starred[i]!
+    seg.starredB = g.attrs.starred[j]!
+    for (let s = 0; s < SEGMENTS; s++) {
+      const t0 = s / SEGMENTS
+      const t1 = (s + 1) / SEGMENTS
+      arcPoint(pa, ctrl, pb, t0, p0)
+      arcPoint(pa, ctrl, pb, t1, p1)
+      seg.a = seg.a2 = p0
+      seg.b = seg.b2 = p1
+      seg.t0 = t0
+      seg.t1 = t1
+      // Whiter near the source so the arcs read as leaving the anchor, but faded right at it so the
+      // eight starts do not pile into a blob over the star.
+      for (let c = 0; c < 3; c++) {
+        const tint = (t: number) => {
+          const w = 0.35 * (1 - t)
+          const lift = Math.min(1, t / 0.14)
+          return ((col[i * 3 + c]! * (1 - t) + col[j * 3 + c]! * t) * (1 - w) + w) * ARC_GAIN * lift
+        }
+        cA[c] = tint(t0)
+        cB[c] = tint(t1)
+      }
+      seg.colorA = cA
+      seg.colorB = cB
+      buf.write(k++, seg)
+    }
   })
+  return k
 }
 
-/** kNN arcs from the hovered (else selected) star to its neighbours, weighted by cosine. */
+/** kNN arcs from the hovered (else selected) star to its neighbours: one instanced ribbon draw. */
 export function NeighborArcs({ galaxy }: { galaxy: GalaxyIndex }) {
-  const [anchor, setAnchor] = useState<number | null>(null)
-  const [flat, setFlat] = useState(0)
-  const born = useRef(0)
-  const lines = useRef<(Line2 | null)[]>([])
-  const flows = useRef<(Line2 | null)[]>([])
+  const buffer = useMemo(() => new RibbonBuffer(MAX_ARCS * SEGMENTS, true), [])
+  const { material, uniforms } = useMemo(() => ribbonMaterial({ drawSeconds: 0.32, pulseSpeed: 0.55, pulseGain: 2.2 }), [])
+  const state = useRef({ anchor: null as number | null, flat: -1, clock: 0 })
 
   useEffect(
     () =>
       useGalaxyStore.subscribe(
         (s) => (s.view === 'list' ? null : (s.hovered ?? s.selected)),
         (a) => {
-          setAnchor(a)
-          born.current = performance.now()
+          state.current.anchor = a
+          state.current.flat = -1
+          state.current.clock = 0
           sceneBus.invalidate()
         },
         { fireImmediately: true },
       ),
     [],
   )
-
-  const arcs = useMemo(() => (anchor === null || anchor >= galaxy.n ? [] : buildArcs(galaxy, anchor, flat)), [galaxy, anchor, flat])
+  useEffect(
+    () => () => {
+      buffer.dispose()
+      material.dispose()
+    },
+    [buffer, material],
+  )
 
   useFrame((_, dt) => {
-    const u = sceneBus.uniforms.uFlat.value
-    // Rebuild while the flat tween runs, in steps, so arcs stay attached to their stars.
-    if (anchor !== null && Math.abs(u - flat) > 0.02) setFlat(u)
+    const st = state.current
     const s = useGalaxyStore.getState()
     const still = s.frozen || s.settings.motion === 'reduced'
-    const age = (performance.now() - born.current) / 1000
-    let animating = false
-    arcs.forEach((arc, k) => {
-      const t = still ? 1 : Math.min(1, Math.max(0, (age - arc.rank * STAGGER_S) / FADE_S))
-      if (t < 1) animating = true
-      const weight = Math.max(0, (arc.cos - 0.35) / 0.65)
-      const line = lines.current[k]
-      if (line) line.material.opacity = t * (0.22 + 0.5 * weight)
-      const flow = flows.current[k]
-      if (flow) {
-        flow.visible = !still
-        flow.material.opacity = t * (0.35 + 0.55 * weight)
-        flow.material.dashOffset -= dt * FLOW_SPEED
-      }
-    })
-    if (animating || (!still && arcs.length > 0)) sceneBus.invalidate()
+    const u = sceneBus.uniforms.uFlat.value
+    if (st.anchor === null || st.anchor >= galaxy.n) {
+      if (buffer.geometry.instanceCount !== 0) buffer.commit(0, [])
+      return
+    }
+    // Rebuild while the flat tween runs, in steps, so arcs stay attached to their stars.
+    if (st.flat < 0 || Math.abs(u - st.flat) > 0.02 || (u !== st.flat && (u === 0 || u === 1))) {
+      st.flat = u
+      buffer.commit(writeArcs(buffer, galaxy, st.anchor, u))
+    }
+    st.clock += dt
+    uniforms.uDrawClock.value = still ? 1e6 : st.clock
+    uniforms.uFlow.value = still ? 0 : 1
+    if (!still) sceneBus.invalidate()
   })
 
-  return (
-    <group renderOrder={8}>
-      {arcs.map((arc, k) => {
-        const width = 1.1 + 2.2 * Math.max(0, (arc.cos - 0.35) / 0.65)
-        return (
-          <group key={`${anchor}-${arc.j}`}>
-            <Line
-              ref={(l) => void (lines.current[k] = l as unknown as Line2 | null)}
-              points={arc.points}
-              vertexColors={arc.colors}
-              lineWidth={width}
-              transparent
-              opacity={0}
-              depthWrite={false}
-              toneMapped={false}
-            />
-            <Line
-              ref={(l) => void (flows.current[k] = l as unknown as Line2 | null)}
-              points={arc.points}
-              vertexColors={arc.flowColors}
-              lineWidth={width * 1.6}
-              dashed
-              dashSize={0.06}
-              gapSize={0.94}
-              dashScale={1 / Math.max(1e-3, arc.points[0]!.distanceTo(arc.points[SEGMENTS]!))}
-              transparent
-              opacity={0}
-              depthWrite={false}
-              toneMapped={false}
-            />
-          </group>
-        )
-      })}
-    </group>
-  )
+  return <mesh geometry={buffer.geometry} material={material} frustumCulled={false} raycast={() => null} renderOrder={8} />
 }
