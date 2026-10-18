@@ -105,7 +105,7 @@ export function NeighborArcs({ galaxy }: { galaxy: GalaxyIndex }) {
   return (
     <group renderOrder={8}>
       {arcs.map((arc, k) => {
-        const width = 0.8 + 1.8 * Math.max(0, (arc.cos - 0.35) / 0.65)
+        const width = 1.1 + 2.2 * Math.max(0, (arc.cos - 0.35) / 0.65)
         return (
           <group key={`${anchor}-${arc.j}`}>
             <Line

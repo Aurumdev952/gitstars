@@ -9,6 +9,7 @@ varying float vIntensity;
 varying float vRing;
 varying float vFog;
 varying float vCoc;
+varying float vWhiten;
 
 const vec3 STARLIGHT = vec3(0.74, 0.58, 0.29);
 
@@ -40,7 +41,7 @@ void main() {
   }
 
   float glow = 0.022 * exp(-r * r * 9.0) * vHalo;
-  vec3 coreColor = mix(vColor, vec3(1.0), 0.5);
+  vec3 coreColor = mix(vColor, vec3(1.0), vWhiten);
   vec3 col = coreColor * core + vColor * (halo * 3.6 + glow * 3.0 + disc + spikes) + STARLIGHT * ring;
   gl_FragColor = vec4(col * vIntensity, 1.0);
 }

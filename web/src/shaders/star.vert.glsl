@@ -36,6 +36,7 @@ varying float vIntensity;
 varying float vRing;
 varying float vFog;
 varying float vCoc;
+varying float vWhiten;
 
 vec3 lensRamp(float t) {
   float x = clamp(t, 0.0, 1.0) * 4.0;
@@ -84,7 +85,9 @@ void main() {
   vColor = mix(base, uFogColor * 4.0, vFog * 0.55);
   // Ghosts (filtered out, vis ~0.3) keep about a tenth of their light.
   float ghost = mix(0.1, 1.0, smoothstep(0.3, 0.95, vis));
-  float lensLight = mix(1.0, 0.16 + 1.3 * aLens, uLens);
+  float lensLight = mix(1.0, 0.07 + 1.6 * aLens, uLens);
+  // Under the lens the core keeps its ramp colour instead of burning white, so heat reads as hue.
+  vWhiten = mix(0.5, 0.12 + 0.3 * aLens, uLens);
   vHalo = (1.0 - archived * 0.85) / sqrt(max(aDensity, 0.05));
   vIntensity = aBright * twinkle * pulseTerm * (1.0 + flash) * mix(0.25, 1.0, focus) * (1.0 - 0.4 * archived)
              * (1.0 - 0.7 * vFog) * (1.0 + 0.7 * hi) * ghost * lensLight * step(0.001, vis * born);

@@ -44,7 +44,17 @@ export function FilterButton() {
           )}
         </button>
       </PopoverTrigger>
-      <PopoverContent className="w-[min(408px,calc(100vw-2rem))]" collisionPadding={16}>
+      <PopoverContent
+        aria-label="Filters"
+        className="w-[min(408px,calc(100vw-2rem))]"
+        collisionPadding={16}
+        // Focus the panel itself rather than its first button, so opening it does not light up Reset.
+        onOpenAutoFocus={(e) => {
+          e.preventDefault()
+          ;(e.currentTarget as HTMLElement | null)?.focus()
+        }}
+        tabIndex={-1}
+      >
         <FilterForm />
       </PopoverContent>
     </Popover>

@@ -136,6 +136,9 @@ export function Labels({ galaxy }: { galaxy: GalaxyIndex }) {
     }
     forced.forEach(placeRepo)
 
+    // Cluster names step back under the lens so the heat map carries the view.
+    const lensDim = s.lens.state === 'ready' ? 0.5 : 1
+
     // Galaxy labels, nearest first. They fade once the camera is inside the galaxy.
     const order = macro
       .map((l) => ({ l, d: cam.position.distanceTo(clusterAnchor(l.node, flat, anchor)) }))
@@ -143,7 +146,7 @@ export function Labels({ galaxy }: { galaxy: GalaxyIndex }) {
     for (const { l, d } of order) {
       const inside = Math.min(1, Math.max(0, (d / Math.max(1, l.node.radius) - 1.1) / 1.4))
       const shown = inside > 0.05 && placeCluster(l, texts.current.get(l), occ, m, flat)
-      const emphasis = s.hoveredCluster === null ? 0.86 : s.hoveredCluster === l.node.id ? 1 : 0.4
+      const emphasis = (s.hoveredCluster === null ? 0.86 : s.hoveredCluster === l.node.id ? 1 : 0.4) * lensDim
       l.alpha = fade(l.alpha, shown ? inside * emphasis : 0)
     }
 
@@ -164,7 +167,7 @@ export function Labels({ galaxy }: { galaxy: GalaxyIndex }) {
     for (const l of systems) {
       const dim = focusGalaxy && l.node.parentId !== focusGalaxy ? 0.35 : 1
       const hot = s.hoveredCluster === l.node.id || s.focusCluster === l.node.id ? 1 : 0.8
-      l.alpha = fade(l.alpha, sysShown.has(l) ? dim * hot : 0)
+      l.alpha = fade(l.alpha, sysShown.has(l) ? dim * hot * lensDim : 0)
       if (!sysShown.has(l)) l.slot = null
     }
 
@@ -175,7 +178,7 @@ export function Labels({ galaxy }: { galaxy: GalaxyIndex }) {
     const now = performance.now()
     if (now - repoState.lastPick > REPO.reselectMs) {
       repoState.lastPick = now
-      repoState.candidates = want > 0 ? rankRepos(g, m, size, layout, forced) : []
+      repoState.candidates = want > 0 ? rankRepos(g, m, size, layout, forced, s.lens.state === 'ready' ? s.lens.weights : null) : []
     }
     for (const i of repoState.candidates) {
       if (repoPlaced.size >= want + forced.length) break
@@ -290,6 +293,7 @@ function rankRepos(
   size: { width: number; height: number },
   layout: ReturnType<typeof currentLayout>,
   skip: number[],
+  lens: Float32Array | null,
 ): number[] {
   const focus = sceneBus.pointer ?? { x: size.width / 2, y: size.height / 2 }
   const skipSet = new Set(skip)
@@ -304,7 +308,8 @@ function rankRepos(
     if (r < REPO.minPx) continue
     const d = Math.hypot(p.x - focus.x, p.y - focus.y)
     const lit = (sceneBus.dyn[i * 4 + 2] ?? 1) * 0.75 + 0.25
-    const score = g.attrs.bright[i]! * (0.35 + g.attrs.size[i]!) * r * lit / (1 + d / 220)
+    const heat = lens ? 0.05 + lens[i]! : 1
+    const score = (g.attrs.bright[i]! * (0.35 + g.attrs.size[i]!) * r * lit * heat) / (1 + d / 220)
     best.push([i, score])
   }
   best.sort((a, b) => b[1] - a[1])

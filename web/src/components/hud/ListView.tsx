@@ -97,7 +97,7 @@ export function ListView() {
           </button>
         )}
       </header>
-      <div role="row" className="flex items-center gap-4 border-y border-glass-border px-5 py-2 text-[11.5px] text-ink-faint">
+      <div role="row" className="flex items-center gap-4 overflow-hidden border-y border-glass-border px-5 py-2 text-[11.5px] text-ink-faint [scrollbar-gutter:stable]">
         {COLUMNS.map((c) => (
           <button
             key={c.key}
@@ -112,7 +112,7 @@ export function ListView() {
           </button>
         ))}
       </div>
-      <div ref={scroller} role="table" aria-rowcount={rows.length} className="scrollbar-thin min-h-0 flex-1 overflow-y-auto">
+      <div ref={scroller} role="table" aria-rowcount={rows.length} className="scrollbar-thin min-h-0 flex-1 overflow-y-auto [scrollbar-gutter:stable]">
         {rows.length === 0 && <p className="px-5 py-10 text-center text-[13px] text-ink-faint">No stars match these filters.</p>}
         <div className="relative w-full" style={{ height: v.getTotalSize() }}>
           {v.getVirtualItems().map((item) => {
