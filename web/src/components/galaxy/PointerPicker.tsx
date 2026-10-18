@@ -45,10 +45,12 @@ export function PointerPicker() {
     }
     const onMove = (e: PointerEvent) => {
       last = local(e)
+      sceneBus.pointer = last
       if (!raf) raf = requestAnimationFrame(hoverNow)
     }
     const onLeave = () => {
       last = null
+      sceneBus.pointer = null
       actions.hover(null)
       el.style.cursor = ''
     }

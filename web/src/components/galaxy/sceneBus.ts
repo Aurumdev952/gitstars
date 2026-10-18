@@ -18,6 +18,8 @@ export const sceneBus = {
   dyn: new Float32Array(0),
   dynTarget: new Float32Array(0),
   dynAttr: null as InstancedBufferAttribute | null,
+  /** aLens per star: the concept lens weight, written once per lens query. */
+  lensAttr: null as InstancedBufferAttribute | null,
   /** Bumped each time Stars publishes new aDyn buffers. */
   dynVersion: 0,
   controls: null as CameraControlsImpl | null,
@@ -27,6 +29,10 @@ export const sceneBus = {
   invalidate: () => {},
   /** Called once per rendered frame after the camera updates; DOM anchors write their transforms here. */
   frameHooks: new Set<FrameHook>(),
+  /** Last pointer position over the canvas, in canvas pixels; repo labels gather around it. */
+  pointer: null as { x: number; y: number } | null,
+  /** The DOM repo-label pool, positioned by the label layout pass each frame. */
+  repoLabelSlots: [] as HTMLElement[],
   /** Screen rects of HUD panels (viewport coordinates) that 3D labels keep clear of. */
   occluders: new Set<() => DOMRect | null>(),
 }

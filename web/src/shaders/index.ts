@@ -1,6 +1,7 @@
 import { Vector2, Vector3 } from 'three'
 import { sceneTheme } from '#/lib/theme'
 import { RESTING_LAYOUT } from '#/lib/layout'
+import { LENS_RAMP } from '#/lib/lens'
 import layout from './chunks/layout.glsl?raw'
 import fog from './chunks/fog.glsl?raw'
 import noise from './chunks/noise.glsl?raw'
@@ -41,6 +42,8 @@ export const shaders = {
 
 const u = <T>(value: T) => ({ value })
 
+export const MAX_GALAXIES = 32
+
 /** One shared uniform set: star, dust, nebula and later line materials read layout and time from it. */
 export function createSceneUniforms() {
   const { fog, stars } = sceneTheme
@@ -65,6 +68,13 @@ export function createSceneUniforms() {
     uTwinkle: u(1),
     uCamVel: u(new Vector3()),
     uWarp: u(0),
+    uLens: u(0),
+    uLensRamp: u(LENS_RAMP.map((c) => new Vector3(...c))),
+    /** Nebula focus: the galaxy index to keep, and how strongly the others fade. */
+    uFocusCluster: u(-1),
+    uFocusAmt: u(0),
+    /** Per galaxy, the fraction of its members that pass the filters (nebulae thin out with it). */
+    uGalaxyVis: u(new Float32Array(MAX_GALAXIES).fill(1)),
   }
 }
 

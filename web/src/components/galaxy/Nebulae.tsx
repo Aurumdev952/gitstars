@@ -73,8 +73,6 @@ export function Nebulae({ galaxy }: { galaxy: GalaxyIndex }) {
       uniforms: {
         ...sceneBus.uniforms,
         uNoise: { value: noise },
-        uFocusCluster: { value: -1 },
-        uFocusAmt: { value: 0 },
         uNebula: { value: 1 },
       },
       transparent: true,
