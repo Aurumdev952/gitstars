@@ -1,7 +1,6 @@
 /data/
 .venv/
 node_modules/
-.env
 *.pyc
 __pycache__/
 web/public/data/*
@@ -13,3 +12,4 @@ dist/
 todo.md
 decisions.tsv
 .claude/
+config.bat

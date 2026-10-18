@@ -9,7 +9,6 @@ from typing import Literal
 
 Provider = Literal["openrouter", "local"]
 
-VIEWER = "Aurumdev952"
 DECIDER_MODEL = "perplexity/pplx-decider-v1.2"
 EMBED_MODEL = "google/embeddinggemma-2"
 BROWSER_EMBED_MODEL = "onnx-community/embeddinggemma-2-ONNX"
@@ -61,8 +60,13 @@ def github_token() -> str:
 
 
 def openrouter_key() -> str:
-    """Read from the key service at call time and keep only in memory; never log, print, or persist it."""
-    out = subprocess.run(["keysvc", "get", "or-key"], capture_output=True, text=True)
-    if out.returncode != 0 or not out.stdout.strip():
-        raise RuntimeError("keysvc could not provide the OpenRouter key (or-key)")
+    """Read at call time and keep only in memory; never log, print, or persist it."""
+    if key := os.environ.get("OPENROUTER_API_KEY", "").strip():
+        return key
+    try:
+        out = subprocess.run(["keysvc", "get", "or-key"], capture_output=True, text=True)
+    except FileNotFoundError:
+        out = None
+    if out is None or out.returncode != 0 or not out.stdout.strip():
+        raise RuntimeError("set OPENROUTER_API_KEY (or provide it through `keysvc get or-key`)")
     return out.stdout.strip()

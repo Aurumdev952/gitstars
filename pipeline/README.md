@@ -29,7 +29,7 @@ keeps its gate verdict and summary. Bump `PROMPT_VERSION` (`llm/prompts.py`) or 
 `JUDGE_PROMPT_VERSION` (`decider.py`) when prompt text changes meaning. `--limit N` processes at most N repos
 that need work.
 
-Secrets: the OpenRouter key comes from `keysvc get or-key` at run time and is never logged or stored; the GitHub
+Secrets: the OpenRouter key comes from `OPENROUTER_API_KEY` (or `keysvc get or-key`) at run time and is never logged or stored; the GitHub
 token comes from `gh auth token`.
 
 Stages are listed in `src/gitstars/stages.py`. Export validates against `contract/galaxy.schema.json`.

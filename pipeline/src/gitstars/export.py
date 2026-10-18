@@ -12,7 +12,7 @@ from typing import Any
 import numpy as np
 from jsonschema import Draft202012Validator, FormatChecker
 
-from gitstars.config import BROWSER_EMBED_MODEL, DOC_PREFIX, EMBED_MODEL, QUERY_PREFIX, SEARCH_DIMS, VIEWER, main_checkout_root
+from gitstars.config import BROWSER_EMBED_MODEL, DOC_PREFIX, EMBED_MODEL, QUERY_PREFIX, SEARCH_DIMS, main_checkout_root
 from gitstars.context import Ctx
 from gitstars.db import DB
 from gitstars.domain import Repo, sha
@@ -195,7 +195,7 @@ def write_atomic(path: Path, data: bytes) -> None:
 
 def run_export(ctx: Ctx) -> dict:
     stats = ctx.db.get_global("fetch") or {}
-    doc, vecs = build(ctx.db, stats.get("viewer") or VIEWER)
+    doc, vecs = build(ctx.db, stats.get("viewer") or "")
     validate(doc)
     body = json.dumps(doc, separators=(",", ":"), ensure_ascii=False, allow_nan=False).encode()
     f16 = np.ascontiguousarray(vecs.astype("<f2"))
