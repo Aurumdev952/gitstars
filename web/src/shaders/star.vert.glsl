@@ -4,6 +4,7 @@ attribute vec3 aColor;
 attribute float aSize;
 attribute float aBright;
 attribute float aSeed;
+attribute float aDelay;
 attribute float aStarred;
 attribute vec4 aMeta;   // archived, activity, quality, spikes
 attribute float aDensity;
@@ -45,7 +46,7 @@ vec3 lensRamp(float t) {
 }
 
 void main() {
-  vec3 p = gsLayout(aPos, aPos2, aSeed);
+  vec3 p = gsLayout(aPos, aPos2, aDelay);
   float born = gsBorn(aStarred);
   float vis = aDyn.x;
   float hi = aDyn.y;

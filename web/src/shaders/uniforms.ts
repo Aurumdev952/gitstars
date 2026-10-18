@@ -23,6 +23,7 @@ export function createSceneUniforms() {
     uFlat: u(RESTING_LAYOUT.flat),
     uIntro: u(RESTING_LAYOUT.intro),
     uIntroOrigin: u(vec3(...RESTING_LAYOUT.introOrigin)),
+    uIntroRadius: u(RESTING_LAYOUT.introRadius),
     uTimeline: u(RESTING_LAYOUT.timeline),
     uTimelineOn: u(0),
     uBirthWindow: u(RESTING_LAYOUT.birthWindow),

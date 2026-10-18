@@ -38,6 +38,10 @@ export const sceneBus = {
   repoLabelSlots: [] as HTMLElement[],
   /** Screen rects of HUD panels (viewport coordinates) that 3D labels keep clear of. */
   occluders: new Set<() => DOMRect | null>(),
+  /** Seconds since galaxy labels began their intro stagger; Infinity once settled. */
+  labelClock: Infinity,
+  /** Orbit distance of the home framing, which the label pass reads as "zoom 1". */
+  homeDistance: 0,
 }
 
 export function currentLayout(): LayoutUniforms {
@@ -46,6 +50,7 @@ export function currentLayout(): LayoutUniforms {
     flat: u.uFlat.value,
     intro: u.uIntro.value,
     introOrigin: [u.uIntroOrigin.value.x, u.uIntroOrigin.value.y, u.uIntroOrigin.value.z],
+    introRadius: u.uIntroRadius.value,
     timeline: u.uTimeline.value,
     timelineOn: u.uTimelineOn.value > 0.5,
     birthWindow: u.uBirthWindow.value,

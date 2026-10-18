@@ -4,7 +4,7 @@ import { bornAt, positionAt, RESTING_LAYOUT, type LayoutAttributes } from './lay
 const attrs: LayoutAttributes = {
   pos: new Float32Array([10, 20, 30, -4, 0, 8]),
   pos2: new Float32Array([2, 4, 0, 6, -2, 0]),
-  seed: new Float32Array([0, 1]),
+  delay: new Float32Array([0, 0.5]),
   starred: new Float32Array([0.3, 0.9]),
 }
 
@@ -25,15 +25,27 @@ describe('positionAt', () => {
   })
 
   it('spirals out by the shader formula mid-intro', () => {
-    // seed 0, uIntro 0.275: t = 0.5, e = 0.875, angle = 0.3 about Y around the origin.
-    const p = positionAt(attrs, 0, { ...RESTING_LAYOUT, intro: 0.275 })
-    const c = Math.cos(0.3), s = Math.sin(0.3)
+    // delay 0, uIntro 0.275: t = 0.5, e = 0.875; the twist grows with distance from the origin.
+    const u = { ...RESTING_LAYOUT, intro: 0.275, introRadius: 50 }
+    const p = positionAt(attrs, 0, u)
+    const ang = 0.125 * (1.4 + (2.6 * Math.hypot(10, 20, 30)) / 50)
+    const c = Math.cos(ang), s = Math.sin(ang)
     expect(p[0]).toBeCloseTo((10 * c + 30 * s) * 0.875, 5)
-    expect(p[1]).toBeCloseTo(20 * 0.875, 5)
+    expect(p[1]).toBeCloseTo(20 * 0.875 * 0.875, 5)
     expect(p[2]).toBeCloseTo((-10 * s + 30 * c) * 0.875, 5)
   })
 
-  it('delays high-seed stars, so they are still at the origin when low seeds have landed', () => {
+  it('winds outer stars further than inner ones, which draws the spiral arms', () => {
+    const two: LayoutAttributes = { pos: new Float32Array([10, 0, 0, 80, 0, 0]), pos2: new Float32Array(6), delay: new Float32Array(2), starred: new Float32Array(2) }
+    const u = { ...RESTING_LAYOUT, intro: 0.2, introRadius: 80 }
+    const angle = (i: number) => {
+      const [x, , z] = positionAt(two, i, u)
+      return Math.atan2(-z, x)
+    }
+    expect(angle(1)).toBeGreaterThan(angle(0) + 0.5)
+  })
+
+  it('delays late stars, so they are still at the origin when early ones have landed', () => {
     const u = { ...RESTING_LAYOUT, intro: 0.45 }
     expect(positionAt(attrs, 1, u)).toEqual([0, 0, 0])
     expect(positionAt(attrs, 0, { ...RESTING_LAYOUT, intro: 0.55 })).toEqual([10, 20, 30])

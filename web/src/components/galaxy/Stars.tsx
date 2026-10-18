@@ -34,6 +34,7 @@ function buildStarBuffers(g: GalaxyIndex) {
   geo.setAttribute('aSize', inst(a.size, 1))
   geo.setAttribute('aBright', inst(a.bright, 1))
   geo.setAttribute('aSeed', inst(a.seed, 1))
+  geo.setAttribute('aDelay', inst(a.delay, 1))
   geo.setAttribute('aStarred', inst(a.starred, 1))
   geo.setAttribute('aMeta', inst(a.meta, 4))
   geo.setAttribute('aDensity', inst(a.density, 1))

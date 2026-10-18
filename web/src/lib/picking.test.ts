@@ -17,7 +17,7 @@ function projectorAt(camPos: Vector3): Projector {
 const attrs = {
   pos: new Float32Array([0, 0, 0, 10, 0, 0, -10, 0, 0]),
   pos2: new Float32Array(9),
-  seed: new Float32Array(3),
+  delay: new Float32Array(3),
   starred: new Float32Array([0.1, 0.5, 0.9]),
   size: new Float32Array([0.2, 0.9, 0.2]),
 }

@@ -5,6 +5,8 @@ export type LayoutUniforms = {
   flat: number
   intro: number
   introOrigin: readonly [number, number, number]
+  /** Spiral arms wind by distance over this radius. */
+  introRadius: number
   timeline: number
   timelineOn: boolean
   birthWindow: number
@@ -14,6 +16,7 @@ export const RESTING_LAYOUT: LayoutUniforms = {
   flat: 0,
   intro: 1,
   introOrigin: [0, 0, 0],
+  introRadius: 100,
   timeline: 1,
   timelineOn: false,
   birthWindow: 0.02,
@@ -22,7 +25,8 @@ export const RESTING_LAYOUT: LayoutUniforms = {
 export type LayoutAttributes = {
   pos: Float32Array
   pos2: Float32Array
-  seed: Float32Array
+  /** Intro launch delay in uIntro units (lib/intro.ts introDelay). */
+  delay: Float32Array
   starred: Float32Array
 }
 
@@ -37,17 +41,18 @@ export function positionAt(
   let y = a.pos[o + 1]! + (a.pos2[o + 1]! - a.pos[o + 1]!) * u.flat
   let z = a.pos[o + 2]! + (a.pos2[o + 2]! - a.pos[o + 2]!) * u.flat
 
-  const t = clamp01((u.intro - a.seed[i]! * 0.45) / 0.55)
+  const t = clamp01((u.intro - a.delay[i]!) / 0.55)
   const e = 1 - (1 - t) ** 3
   if (e < 1) {
     const [ox, oy, oz] = u.introOrigin
-    const ang = (1 - e) * 2.4
+    const dx = x - ox
+    const dy = y - oy
+    const dz = z - oz
+    const ang = (1 - e) * (1.4 + (2.6 * Math.hypot(dx, dy, dz)) / Math.max(u.introRadius, 1))
     const c = Math.cos(ang)
     const s = Math.sin(ang)
-    const dx = x - ox
-    const dz = z - oz
     x = ox + (dx * c + dz * s) * e
-    y = oy + (y - oy) * e
+    y = oy + dy * e * e
     z = oz + (-dx * s + dz * c) * e
   }
   out[0] = x

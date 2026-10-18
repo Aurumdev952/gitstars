@@ -1,6 +1,7 @@
 import { GalaxyData, type Cluster, type Repo } from './schema'
 import { assignGalaxyHues, galaxyColor, systemColor, type ClusterColor } from './palette'
 import type { LayoutAttributes } from './layout'
+import { introDelay } from './intro'
 
 export type ClusterNode = Cluster & {
   /** Position in `galaxies` or `systems`. */
@@ -11,6 +12,7 @@ export type ClusterNode = Cluster & {
 }
 
 export type StarAttributes = LayoutAttributes & {
+  seed: Float32Array
   color: Float32Array
   size: Float32Array
   bright: Float32Array
@@ -129,6 +131,8 @@ export function buildGalaxyIndex(data: GalaxyData, vectorsUrl = ''): GalaxyIndex
   const size = new Float32Array(n)
   const bright = new Float32Array(n)
   const seed = new Float32Array(n)
+  const delay = new Float32Array(n)
+  const hueRank = new Map([...galaxies].sort((a, b) => a.color.hue - b.color.hue).map((c, k) => [c.index, k]))
   const starred = new Float32Array(n)
   const meta = new Float32Array(n * 4)
 
@@ -153,6 +157,7 @@ export function buildGalaxyIndex(data: GalaxyData, vectorsUrl = ''): GalaxyIndex
     starred[i] = clamp01(s)
     bright[i] = 0.55 + 0.45 * clamp01(s) ** 0.8
     seed[i] = hash01(r.fullName)
+    delay[i] = introDelay(hueRank.get(galaxyOf[i]!)!, galaxies.length, seed[i]!)
     const pushedDays = r.pushedAt ? (now - Date.parse(r.pushedAt)) / DAY : Infinity
     const activity = r.archived ? 0 : Math.exp(-Math.max(0, pushedDays) / 180)
     meta.set([r.archived ? 1 : 0, activity, r.quality ?? 0.5, r.stars >= spikeThreshold ? 1 : 0], i * 4)
@@ -177,7 +182,7 @@ export function buildGalaxyIndex(data: GalaxyData, vectorsUrl = ''): GalaxyIndex
     byFullName,
     galaxyOf,
     systemOf,
-    attrs: { pos, pos2, color, size, bright, seed, starred, meta, density },
+    attrs: { pos, pos2, color, size, bright, seed, delay, starred, meta, density },
     d8,
     center,
     radius,

@@ -33,6 +33,7 @@ function buildNebulae(g: GalaxyIndex) {
   const pos2 = new Float32Array(n * 3)
   const color = new Float32Array(n * 3)
   const seed = new Float32Array(n)
+  const delay = new Float32Array(n)
   const scale = new Float32Array(n)
   const cluster = new Float32Array(n)
   anchors.forEach(({ member, galaxy }, k) => {
@@ -43,6 +44,7 @@ function buildNebulae(g: GalaxyIndex) {
     const tint = 0.7 + 0.3 * rand()
     color.set([c[0] * tint, c[1] * tint, c[2] * tint], k * 3)
     seed[k] = rand()
+    delay[k] = g.attrs.delay[member]!
     const r = sys?.radius ?? g.galaxies[galaxy]!.radius * 0.5
     scale[k] = Math.min(42, Math.max(7, r * (0.55 + 0.6 * rand())))
     cluster[k] = galaxy
@@ -55,6 +57,7 @@ function buildNebulae(g: GalaxyIndex) {
   geo.setAttribute('aPos2', new InstancedBufferAttribute(pos2, 3))
   geo.setAttribute('aColor', new InstancedBufferAttribute(color, 3))
   geo.setAttribute('aSeed', new InstancedBufferAttribute(seed, 1))
+  geo.setAttribute('aDelay', new InstancedBufferAttribute(delay, 1))
   geo.setAttribute('aScale', new InstancedBufferAttribute(scale, 1))
   geo.setAttribute('aCluster', new InstancedBufferAttribute(cluster, 1))
   return geo

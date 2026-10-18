@@ -1,6 +1,7 @@
 attribute vec3 aPos;
 attribute vec3 aPos2;
 attribute float aSeed;
+attribute float aDelay;
 attribute float aScale;
 attribute vec3 aColor;
 attribute float aCluster;
@@ -19,7 +20,7 @@ varying float vSeed;
 varying float vAlpha;
 
 void main() {
-  vec3 p = gsLayout(aPos, aPos2, aSeed);
+  vec3 p = gsLayout(aPos, aPos2, aDelay);
   vec4 mv = modelViewMatrix * vec4(p, 1.0);
   float c = cos(aSeed * 6.2831);
   float s = sin(aSeed * 6.2831);
@@ -35,5 +36,7 @@ void main() {
   vColor = aColor;
   vSeed = aSeed;
   float members = uGalaxyVis[int(clamp(aCluster, 0.0, 31.0))];
-  vAlpha = near * focused * uNebula * members * (1.0 - 0.75 * uLens);
+  // Each cloud gathers as its anchor star lands at the end of the intro.
+  float landed = smoothstep(0.7, 1.0, gsIntroT(aDelay));
+  vAlpha = near * focused * uNebula * members * landed * (1.0 - 0.75 * uLens);
 }
