@@ -21,12 +21,16 @@ VOTE_ROUNDS = 50
 # Galaxy label as a weak UMAP target pulls galaxies apart; 0.3 measured the same kNN recall as unsupervised.
 GALAXY_TARGET_WEIGHT = 0.3
 # Galaxies are then inflated about their centroids until, for 75% of them, the gap to the nearest other galaxy
-# centroid is at least 1.7x the sum of both mean radii. Supervised UMAP alone packs each galaxy into a dot.
-# 1.5 sufficed for 12 galaxies; the 13 from the finer systems needed 1.7 to keep centroid distance / radius above 7.2.
-GALAXY_GAP = 1.7
+# centroid is at least GALAXY_GAP x the sum of both mean radii. Supervised UMAP alone packs each galaxy into a dot.
+# 1.5 sufficed for 12 galaxies and 1.7 for 13; the 15 from the centred space needed 2.1 to keep the median nearest
+# gap above 2.14 and the 3-d silhouette above 0.62, the numbers the 13-galaxy layout shipped with.
+GALAXY_GAP = 2.1
 GALAXY_GAP_QUANTILE = 0.25
 SEED = 42
-CENTER = False
+# Measured with the Gemma misfit judge on a fixed 408-repo sample: centring alone left the misfit rate where it
+# was (22.3% vs 21.1%, inside the run-to-run noise) but gave five of the nine watched misplacements a sensible
+# system where the raw space only flagged them; min_cluster_size 10 in the centred space was worse (26.7%).
+CENTER = True
 NEIGHBORS = 8
 GALAXY_RANGE = (10, 16)
 EXTENT = 100.0

@@ -9,11 +9,13 @@ uv run gs gate -n 30            # pplx-decider gate (paid, ~$0.00002/repo)
 uv run gs summarize -n 30       # free OpenRouter pool, most-starred first, judged by the decider
 uv run gs summarize --provider local   # vLLM at 127.0.0.1:8000 (infra/vllm); judge stays on the decider
 uv run gs embed && uv run gs layout
+uv run gs reassign              # pplx-decider (paid, ~$0.06 a pass) moves repos the kNN vote left in the wrong system
 uv run gs name --provider local        # or the free pool; systems, then galaxies from their systems
 uv run gs export
 uv run gs show owner/name       # card, gate verdict, summary, judge scores
 uv run gs report                # galaxies and systems with sample members
 uv run gs coherence             # 8-NN same-system rates, kNN modularity, galaxy separation of the layout
+uv run gs misfits --label after # local Gemma judges a fixed 400-repo sample (plus watched repos): misfit rate
 uv run gs status                # progress per stage and quota left
 uv run pytest
 ```
