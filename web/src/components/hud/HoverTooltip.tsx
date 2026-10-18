@@ -65,21 +65,25 @@ export function HoverTooltip() {
     <div
       ref={el}
       role="tooltip"
-      className="glass pointer-events-none fixed top-0 left-0 z-20 w-max max-w-[300px] rounded-xl px-3.5 py-2.5 opacity-0 transition-opacity duration-100"
+      className="glass pointer-events-none fixed top-0 left-0 z-20 w-max max-w-[320px] rounded-xl px-3.5 py-2.5 opacity-0 transition-opacity duration-100"
     >
       <p className="truncate font-mono text-[12.5px]">
         <span className="text-ink-faint">{owner}/</span>
         <span className="text-ink">{name}</span>
       </p>
-      <p className="mt-1 line-clamp-2 text-[12.5px] leading-snug text-ink-muted">{r.oneLiner}</p>
+      <p className="mt-1 line-clamp-3 text-[12.5px] leading-snug text-ink-muted">{r.oneLiner}</p>
       <p className="mt-1.5 flex items-center gap-1.5 text-[11.5px] text-ink-faint">
         <span className="tabular text-ink-muted">★ {formatCompact(r.stars)}</span>
         {r.language && <span>· {r.language}</span>}
         <span>· {r.kind}</span>
       </p>
       <p className="mt-1 flex items-center gap-1.5 text-[11.5px] text-ink-faint">
-        <ClusterDot color={sys.color.css} className="size-1.5" />
-        {sys.name}
+        {r.outlier ? (
+          <span aria-hidden className="inline-block size-1.5 shrink-0 rounded-full border" style={{ borderColor: sys.color.css }} />
+        ) : (
+          <ClusterDot color={sys.color.css} className="size-1.5" />
+        )}
+        {r.outlier ? `Loosely placed in ${sys.name}` : sys.name}
       </p>
     </div>
   )

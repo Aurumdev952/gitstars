@@ -17,7 +17,7 @@ type Constellation = { buffer: RibbonBuffer; ends: Uint32Array; alpha: Float32Ar
 /** Every system's MST as one ribbon buffer, in layout coordinates so it follows flat and intro. */
 function buildConstellations(g: GalaxyIndex): Constellation {
   const pairs: [number, number][] = []
-  for (const sys of g.systems) for (const e of systemMst(sys.members, (i) => g.repos[i]!.neighbors, g.attrs.pos)) pairs.push(e)
+  for (const sys of g.systems) for (const e of systemMst(sys.core, (i) => g.repos[i]!.neighbors, g.attrs.pos)) pairs.push(e)
   const buffer = new RibbonBuffer(pairs.length)
   const ends = new Uint32Array(pairs.length * 2)
   const alpha = new Float32Array(pairs.length)

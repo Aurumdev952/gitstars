@@ -1,4 +1,4 @@
-import type { Camera, InstancedBufferAttribute, PerspectiveCamera, WebGLRenderer } from 'three'
+import type { Camera, InstancedBufferAttribute, PerspectiveCamera, Scene, WebGLRenderer } from 'three'
 import type CameraControlsImpl from 'camera-controls'
 import { createSceneUniforms } from '#/shaders/uniforms'
 import type { Director } from './Director'
@@ -27,6 +27,8 @@ export const sceneBus = {
   /** Camera choreography; set by the canvas chunk so the HUD can command it without importing three. */
   director: null as Director | null,
   camera: null as PerspectiveCamera | null,
+  /** The post-composer overlay scene that holds 3D labels; read by debug tooling. */
+  overlay: null as Scene | null,
   gl: null as WebGLRenderer | null,
   size: { width: 1, height: 1 },
   invalidate: () => {},

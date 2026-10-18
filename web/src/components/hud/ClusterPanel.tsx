@@ -4,11 +4,14 @@ import { X } from 'lucide-react'
 import { useGalaxyStore } from '#/state/store'
 import type { ClusterNode, GalaxyIndex } from '#/lib/load'
 import { formatCompact, formatCount, splitFullName } from '#/lib/format'
+import { toggleValue } from '#/lib/filters'
+import { memberGroups } from '#/lib/members'
 import { cn } from '#/lib/utils'
 import { ClusterDot } from './Legend'
 import { useOccluder } from './useOccluder'
 
 const MEMBERS_SHOWN = 80
+const LOOSE_SHOWN = 40
 
 export function ClusterPanel() {
   const id = useGalaxyStore((s) => (s.selected === null && s.view !== 'list' ? s.focusCluster : null))
@@ -36,8 +39,8 @@ export function ClusterPanel() {
   )
 }
 
-function mix(members: readonly number[], key: (i: number) => string | null) {
-  const counts = new Map<string, number>()
+function mix<K extends string>(members: readonly number[], key: (i: number) => K | null) {
+  const counts = new Map<K, number>()
   for (const i of members) {
     const k = key(i)
     if (k) counts.set(k, (counts.get(k) ?? 0) + 1)
@@ -46,26 +49,58 @@ function mix(members: readonly number[], key: (i: number) => string | null) {
 }
 
 function ClusterDetails({ g, c }: { g: GalaxyIndex; c: ClusterNode }) {
-  const { focus, select, hover, hoverCluster } = useGalaxyStore((s) => s.actions)
+  const { focus, select, hover, hoverCluster, setFilters } = useGalaxyStore((s) => s.actions)
+  const filters = useGalaxyStore((s) => s.filters)
   const hovered = useGalaxyStore((s) => s.hovered)
   const visible = useGalaxyStore((s) => s.filtered?.visible ?? null)
   const parent = c.parentId ? g.clusterById.get(c.parentId) : undefined
   const children = c.level === 0 ? g.systems.filter((s) => s.parentId === c.id) : []
+  // System bars compare systems with each other; against the galaxy total the largest is a sliver.
+  const largest = Math.max(1, ...children.map((s) => s.members.length))
   const heading = useRef<HTMLHeadingElement>(null)
-  const list = useRef<HTMLUListElement>(null)
+  const list = useRef<HTMLDivElement>(null)
 
   useEffect(() => heading.current?.focus({ preventScroll: true }), [c.id])
 
-  const { kinds, languages, members, shownCount } = useMemo(() => {
-    const ms = [...c.members].sort((a, b) => g.repos[b]!.stars - g.repos[a]!.stars)
-    const shown = visible ? ms.filter((i) => visible[i]) : ms
+  const { kinds, languages, core, loose, shownCount } = useMemo(() => {
+    const groups = memberGroups(c, g.repos, visible)
     return {
       kinds: mix(c.members, (i) => g.repos[i]!.kind),
       languages: mix(c.members, (i) => g.repos[i]!.language),
-      members: shown,
-      shownCount: shown.length,
+      ...groups,
+      shownCount: groups.core.length + groups.loose.length,
     }
   }, [g, c, visible])
+  const row = (i: number, loosely: boolean) => {
+    const r = g.repos[i]!
+    const [o, nm] = splitFullName(r.fullName)
+    return (
+      <li key={i}>
+        <button
+          type="button"
+          data-star={i}
+          onPointerEnter={() => hover(i)}
+          onFocus={() => hover(i)}
+          onClick={() => select(i)}
+          className={cn(
+            'group flex w-full items-center gap-2.5 rounded-lg px-2 py-1.5 text-left transition-colors hover:bg-white/[0.045]',
+            hovered === i && 'bg-white/[0.06]',
+          )}
+        >
+          {loosely ? (
+            <span aria-hidden className="inline-block size-1.5 shrink-0 rounded-full border" style={{ borderColor: g.systems[g.systemOf[i]!]!.color.css }} />
+          ) : (
+            <ClusterDot color={g.systems[g.systemOf[i]!]!.color.css} className="size-1.5" />
+          )}
+          <span className="min-w-0 flex-1 truncate font-mono text-[12px]">
+            <span className="text-ink-faint">{o}/</span>
+            <span className={cn('group-hover:text-ink', hovered === i ? 'text-ink' : loosely ? 'text-ink-faint' : 'text-ink-muted')}>{nm}</span>
+          </span>
+          <span className="tabular font-mono text-[10.5px] text-ink-faint">★ {formatCompact(r.stars)}</span>
+        </button>
+      </li>
+    )
+  }
 
   // Scene hover lights the matching row, so list and galaxy read as one.
   useEffect(() => {
@@ -125,8 +160,8 @@ function ClusterDetails({ g, c }: { g: GalaxyIndex; c: ClusterNode }) {
         )}
 
         <div className="mt-5 grid grid-cols-2 gap-5 border-t border-glass-border pt-4">
-          <MixBars title="Kinds" rows={kinds} total={total} color={c.color.css} />
-          <MixBars title="Languages" rows={languages} total={total} color={c.color.css} />
+          <MixBars title="Kinds" rows={kinds} total={total} color={c.color.css} active={filters.kind} onToggle={(k) => setFilters(toggleValue(filters, 'kind', k))} />
+          <MixBars title="Languages" rows={languages} total={total} color={c.color.css} active={filters.lang} onToggle={(k) => setFilters(toggleValue(filters, 'lang', k))} />
         </div>
 
         {children.length > 0 && (
@@ -146,7 +181,7 @@ function ClusterDetails({ g, c }: { g: GalaxyIndex; c: ClusterNode }) {
                     <ClusterDot color={s.color.css} className="size-1.5" />
                     <span className="min-w-0 flex-1 truncate">{s.name}</span>
                     <span className="h-[3px] w-14 overflow-hidden rounded-full bg-white/[0.07]">
-                      <span className="block h-full rounded-full" style={{ width: `${(s.members.length / total) * 100}%`, background: s.color.css }} />
+                      <span className="block h-full rounded-full" style={{ width: `${(s.members.length / largest) * 100}%`, background: s.color.css }} />
                     </span>
                     <span className="tabular w-8 text-right font-mono text-[11px] text-ink-faint">{s.members.length}</span>
                   </button>
@@ -156,63 +191,79 @@ function ClusterDetails({ g, c }: { g: GalaxyIndex; c: ClusterNode }) {
           </section>
         )}
 
-        <section className="mt-6">
-          <h3 className="text-[12px] font-medium text-ink-faint">Brightest members</h3>
-          <ul ref={list} className="mt-2 -mx-2" onPointerLeave={() => hover(null)}>
-            {members.slice(0, MEMBERS_SHOWN).map((i) => {
-              const r = g.repos[i]!
-              const [o, nm] = splitFullName(r.fullName)
-              return (
-                <li key={i}>
-                  <button
-                    type="button"
-                    data-star={i}
-                    onPointerEnter={() => hover(i)}
-                    onFocus={() => hover(i)}
-                    onClick={() => select(i)}
-                    className={cn(
-                      'group flex w-full items-center gap-2.5 rounded-lg px-2 py-1.5 text-left transition-colors hover:bg-white/[0.045]',
-                      hovered === i && 'bg-white/[0.06]',
-                    )}
-                  >
-                    <ClusterDot color={g.systems[g.systemOf[i]!]!.color.css} className="size-1.5" />
-                    <span className="min-w-0 flex-1 truncate font-mono text-[12px]">
-                      <span className="text-ink-faint">{o}/</span>
-                      <span className={cn('group-hover:text-ink', hovered === i ? 'text-ink' : 'text-ink-muted')}>{nm}</span>
-                    </span>
-                    <span className="tabular font-mono text-[10.5px] text-ink-faint">★ {formatCompact(r.stars)}</span>
-                  </button>
-                </li>
-              )
-            })}
-          </ul>
-          {members.length > MEMBERS_SHOWN && (
-            <p className="mt-2 text-[11.5px] text-ink-faint">and {formatCount(members.length - MEMBERS_SHOWN)} more in the list view</p>
+        <div ref={list} onPointerLeave={() => hover(null)}>
+          {core.length > 0 && (
+            <section className="mt-6">
+              <h3 className="text-[12px] font-medium text-ink-faint">Brightest members</h3>
+              <ul className="mt-2 -mx-2">{core.slice(0, MEMBERS_SHOWN).map((i) => row(i, false))}</ul>
+              {core.length > MEMBERS_SHOWN && (
+                <p className="mt-2 text-[11.5px] text-ink-faint">and {formatCount(core.length - MEMBERS_SHOWN)} more in the list view</p>
+              )}
+            </section>
           )}
-        </section>
+          {loose.length > 0 && (
+            <section className="mt-6">
+              <h3 className="text-[12px] font-medium text-ink-faint">
+                Loosely related <span className="tabular font-normal">· {formatCount(loose.length)}</span>
+              </h3>
+              <p className="mt-1 text-[11.5px] leading-snug text-ink-faint">
+                Not part of any system's dense core; each sits with the system closest in meaning.
+              </p>
+              <ul className="mt-2 -mx-2">{loose.slice(0, LOOSE_SHOWN).map((i) => row(i, true))}</ul>
+              {loose.length > LOOSE_SHOWN && (
+                <p className="mt-2 text-[11.5px] text-ink-faint">and {formatCount(loose.length - LOOSE_SHOWN)} more in the list view</p>
+              )}
+            </section>
+          )}
+        </div>
       </div>
     </>
   )
 }
 
-function MixBars({ title, rows, total, color }: { title: string; rows: [string, number][]; total: number; color: string }) {
+function MixBars<K extends string>({
+  title,
+  rows,
+  total,
+  color,
+  active,
+  onToggle,
+}: {
+  title: string
+  rows: [K, number][]
+  total: number
+  color: string
+  active: readonly K[]
+  onToggle: (key: K) => void
+}) {
   const top = rows.slice(0, 5)
   const rest = rows.slice(5).reduce((n, [, c]) => n + c, 0)
   return (
     <div className="min-w-0">
       <h3 className="text-[11.5px] text-ink-faint">{title}</h3>
       <ul className="mt-2 space-y-1.5">
-        {top.map(([k, n]) => (
-          <li key={k} className="text-[12px]">
-            <div className="flex items-baseline justify-between gap-2">
-              <span className="truncate text-ink-muted">{k}</span>
-              <span className="tabular font-mono text-[10.5px] text-ink-faint">{Math.round((n / total) * 100)}%</span>
-            </div>
-            <span className="mt-1 block h-[3px] overflow-hidden rounded-full bg-white/[0.06]">
-              <span className="block h-full rounded-full opacity-80" style={{ width: `${(n / total) * 100}%`, background: color }} />
-            </span>
-          </li>
-        ))}
+        {top.map(([k, n]) => {
+          const on = active.includes(k)
+          return (
+            <li key={k} className="text-[12px]">
+              <button
+                type="button"
+                aria-pressed={on}
+                title={on ? `Stop showing only ${k}` : `Show only ${k} stars`}
+                onClick={() => onToggle(k)}
+                className="group -mx-1.5 block w-[calc(100%+0.75rem)] rounded-md px-1.5 py-0.5 text-left transition-colors hover:bg-white/[0.04]"
+              >
+                <span className="flex items-baseline justify-between gap-2">
+                  <span className={cn('truncate', on ? 'text-starlight' : 'text-ink-muted group-hover:text-ink')}>{k}</span>
+                  <span className="tabular font-mono text-[10.5px] text-ink-faint">{Math.round((n / total) * 100)}%</span>
+                </span>
+                <span className="mt-1 block h-[3px] overflow-hidden rounded-full bg-white/[0.06]">
+                  <span className="block h-full rounded-full opacity-80" style={{ width: `${(n / total) * 100}%`, background: color }} />
+                </span>
+              </button>
+            </li>
+          )
+        })}
         {rest > 0 && <li className="text-[11px] text-ink-faint">+{rows.length - 5} more · {Math.round((rest / total) * 100)}%</li>}
       </ul>
     </div>

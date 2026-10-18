@@ -21,7 +21,7 @@ const COLUMNS: { key: SortKey; label: string; className: string; numeric?: boole
   { key: 'stars', label: 'Stars', className: 'w-[72px] text-right', numeric: true },
   { key: 'pushed', label: 'Pushed', className: 'w-[84px] text-right max-[1040px]:hidden', numeric: true },
   { key: 'starred', label: 'Starred', className: 'w-[92px] text-right max-[1040px]:hidden', numeric: true },
-  { key: 'galaxy', label: 'Galaxy', className: 'w-[168px] max-[1180px]:hidden' },
+  { key: 'galaxy', label: 'Galaxy', className: 'w-[248px] max-[1400px]:w-[180px] max-[1180px]:hidden' },
 ]
 
 function comparator(g: GalaxyIndex, key: SortKey): (a: number, b: number) => number {
@@ -142,7 +142,7 @@ export function ListView() {
                       <span className="text-ink">{name}</span>
                       {r.archived && <span className="ml-2 font-sans text-[10.5px] text-amber-100/60">archived</span>}
                     </span>
-                    <span className="mt-0.5 block truncate text-[12px] text-ink-faint">{r.oneLiner}</span>
+                    <span title={r.oneLiner} className="mt-0.5 block truncate text-[12px] text-ink-faint">{r.oneLiner}</span>
                   </span>
                 </span>
                 <span className="w-[92px] truncate text-[12px] text-ink-muted max-[900px]:hidden">{r.kind}</span>
@@ -150,7 +150,7 @@ export function ListView() {
                 <span className="tabular w-[72px] text-right font-mono text-[12px] text-ink">{formatCompact(r.stars)}</span>
                 <span className="tabular w-[84px] text-right text-[12px] text-ink-faint max-[1040px]:hidden">{r.pushedAt ? formatAgo(r.pushedAt, now) : '—'}</span>
                 <span className="tabular w-[92px] text-right text-[12px] text-ink-faint max-[1040px]:hidden">{formatMonthYear(r.starredAt)}</span>
-                <span className="flex w-[168px] min-w-0 items-center gap-1.5 text-[12px] text-ink-muted max-[1180px]:hidden">
+                <span title={`${gal.name} › ${sys.name}`} className="flex w-[248px] min-w-0 items-center gap-1.5 text-[12px] text-ink-muted max-[1400px]:w-[180px] max-[1180px]:hidden">
                   <ClusterDot color={gal.color.css} className="size-1.5" />
                   <span className="truncate">{gal.name}</span>
                 </span>

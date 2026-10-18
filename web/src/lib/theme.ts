@@ -12,5 +12,5 @@ export const sceneTheme = {
   bloom: { threshold: 0.9, smoothing: 0.2, intensity: 1.1, radius: 0.72, levels: 7 },
   vignette: { offset: 0.3, darkness: 0.7 },
   noise: 0.025,
-  label: { outline: '#05050d', macroPx: 14, systemPx: 12 },
+  label: { outline: '#05050d', macroPx: 13, systemPx: 12, galaxyOrder: 21 },
 } as const

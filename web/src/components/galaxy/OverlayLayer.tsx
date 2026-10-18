@@ -1,6 +1,7 @@
-import { useState, type ReactNode } from 'react'
+import { useEffect, useState, type ReactNode } from 'react'
 import { createPortal, useFrame, useThree } from '@react-three/fiber'
 import { Scene } from 'three'
+import { sceneBus } from './sceneBus'
 
 /**
  * A second scene drawn after the effect composer, so 3D text stays crisp: bloom from dense star
@@ -11,6 +12,12 @@ export function OverlayLayer({ children }: { children: ReactNode }) {
   const [scene] = useState(() => new Scene())
   const gl = useThree((s) => s.gl)
   const camera = useThree((s) => s.camera)
+  useEffect(() => {
+    sceneBus.overlay = scene
+    return () => {
+      sceneBus.overlay = null
+    }
+  }, [scene])
   useFrame(() => {
     const autoClear = gl.autoClear
     gl.autoClear = false

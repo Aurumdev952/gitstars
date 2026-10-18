@@ -230,3 +230,94 @@ Known issues left open:
   is a review duty.
 - The headless rAF-based fps numbers saturate near the presentation rate (about 85 to 88 fps here).
   Use a trace's rAF and frame-interval percentiles to compare builds.
+
+## After W4 (final data, label placement, verification)
+
+Verified on the final export, `generatedAt` 2026-10-18T04:59:10Z: 2,284 summarised repos, 13 galaxies,
+84 systems, 368 outliers.
+
+Built:
+- Cluster labels sit on the cluster's density peak, not its mean. `densityPeak` in `lib/labelLayout.ts`
+  starts from the member with the highest kernel density (up to 256 candidates) and refines by mean
+  shift, with a kernel of 0.6 times the core's median spread. Starting from the mean would sit still
+  on the saddle between two equal lobes. `load.ts` stores it as `ClusterNode.anchor` (3D) and
+  `anchor2` (flat map), and `centroid2` is gone.
+- Names over 20 characters (galaxies) or 26 (systems) wrap onto two balanced lines (`balancedSplit`).
+  Galaxy names use 13 px with 0.14 em tracking, down from 14 px and 0.2 em.
+- `insetSlots` replaces `clusterSlots`. The label is centred on its anchor first, then nudged while it
+  still covers the anchor, then placed just above or below it, and last with a corner 4 px from it.
+  `LabelBox.maxDrift` (12 px for cluster labels) makes `place` refuse any slot whose rect lies farther
+  than that from the anchor. A label with no such slot hides instead of wandering.
+- `LabelBox.ideal`: a free slot 0 beats the previous slot. Without it, a label that fell back to a
+  corner kept that corner after the crowd moved away.
+- Galaxy labels are placed in order of core size over camera distance, so where two peaks coincide on
+  screen the larger galaxy keeps its name. A galaxy whose systems qualify for names places after
+  them, because its name sits on its main system's peak and would always take that system's spot.
+- System labels qualify on the projected `extent` (on 96 px, off 77 px). The export radius runs up to
+  3.2 times `extent` for systems with a few far members.
+- A label that hides keeps drawing in its last slot while it fades (`ClusterLabel.drawn`).
+- `ClusterNode.extent` (1.5 times the core's median distance from the anchor) drives the "camera is
+  inside this galaxy" fade. The export `radius` of the Cloud Infrastructure galaxy is 187 because 16
+  Hyperledger repos sit 190 away from its core, and that radius had faded its name at the overview.
+- Outliers are HDBSCAN noise that the pipeline attached to the system with the nearest centroid
+  (`pipeline/src/gitstars/layout.py` `attach_noise`). `ClusterNode.core` drops them, for geometry,
+  and falls back to all members when every one is an outlier. Anchors, `extent`, hulls and
+  constellation MSTs use the core. `lib/members.ts` `memberGroups` splits on `outlier` itself and gives
+  the cluster panel its "Brightest members" and "Loosely related" groups. The repo panel and tooltip
+  say "Loosely placed in <system>", and outlier stars are 35% desaturated.
+- HUD: palette rows give the one-liner the full row width, and the palette is a label occluder. Kind
+  and language chips in the repo panel and the kind and language rows in the cluster panel toggle
+  filters. Stack chips that repeat the language or a tag are dropped. Summary quality shows its score.
+  System bars scale to the largest system. The legend is 272 px wide and 50vh tall. The list's galaxy
+  column is 248 px on wide screens. The tooltip allows three lines.
+- `?kind=cli&lang=Rust` works. The router writes JSON arrays, and a bare value (string, number or
+  boolean) now parses as one item. Commas do not split.
+- Debug: `__gitstars.labels()` lists each visible cluster label with its screen rect, `drift` from its
+  anchor, `share` (the fraction of stars within 16 px of the rect that belong to it) and `owner`.
+  `sceneBus.overlay` holds the overlay scene for it.
+
+Label approaches compared (earlier 12-galaxy export, then the final one; screenshots in the W4
+scratchpad as `proto-*.png` and `final-*.png`):
+
+| View | Base (centroid, 0.2 em, side slots) | B (title case, callout with leader line) | A, picked (peak, wrap, inset slots, max drift) |
+|---|---|---|---|
+| Overview 1600×900 | 12 shown, mean share 0.71 | 12 shown, share 0.54 | 12 shown, share 0.89 |
+| Mid zoom | 4, share 0.92 | 5, share 0.79 | 4, share 1.00 |
+| Rotated 90° | 11, share 0.76 | 11, share 0.76 | 11, share 0.89 |
+| 1280×800 | 11, share 0.58 | 12, share 0.63 | 12, share 0.87 |
+
+On the final export, A shows 12 of 13 galaxies at the overview (share 0.79, largest drift 11.8 px),
+13 of 13 on the flat map (share 0.88) and 11 of 13 at 1024×768.
+
+Measured (dev, Chrome 155 headless, 1600×900, auto quality). The box was loaded during these runs (an
+Android emulator at about 200% CPU and other Chrome pages sharing the GPU process), so compare these
+with each other, not with W3's numbers:
+- Base 0306ec3 and W4 on the final export at the same time: 46.6 and 47.3 fps (mean of three 3 s
+  `measureFps` runs each), with 46 and 44 draw calls.
+- Overview trace, unfrozen: rAF JS p50 3.7 ms, p95 7.2 ms; frame interval p50 21.0 ms, p95 28.5 ms.
+- Hover sweep (12 top stars twice, 450 ms apart): rAF JS p50 4.1 ms, p95 9.5 ms, max 20.9 ms; frame
+  interval p50 20.9 ms, p95 29.3 ms; 41 to 45 draw calls.
+- Semantic `probe()`: overlap@10 1.00 over 10 probes, about 118 ms a query (WASM fp16).
+
+Seams:
+- A new label tier places through `place()` with its own slot generator. Set `maxDrift`, `ideal` and
+  `pad` on the shared `box` every time, because repo and cluster placement share it.
+- Geometry that should ignore loosely placed stars reads `ClusterNode.core`. Membership questions
+  read `repo.outlier`, because `core` falls back to every member.
+- `__gitstars.labels()` is the lever for any label change: run it at the home view, a mid zoom, a
+  90° turn and 1280×800, and compare `drift`, `share` and the count shown.
+
+Known issues left open:
+- At the home view, three galaxy peaks (PostgreSQL, Artificial Intelligence and Deep Learning, Cloud
+  Infrastructure) project within about 110 px of each other, so one or two of those names hide. They
+  appear when the view turns. A home azimuth that minimises peak overlap would fix it.
+- The Cloud Infrastructure galaxy has a second lobe of 16 Hyperledger repos 190 units from its core,
+  behind the legend at the home view. This is a pipeline clustering artefact; the anchor ignores it.
+- The legend covers a sizeable share of a 1024×768 viewport.
+- `maxDrift` never rejects a slot today: every `insetSlots` slot is within 6 px of its anchor, and the
+  `insetSlots` test pins that. It guards future slot tables.
+- When a crowded label returns to slot 0 (`ideal`), it jumps up to about 14 px in one frame. Easing the
+  offset per label would smooth it.
+- A galaxy's name hides at mid zoom while its main system's name holds the shared peak; the legend
+  still names it.
+- Close-up bokeh is still hazy (W3 issue), most visible on the deep-linked repo view.

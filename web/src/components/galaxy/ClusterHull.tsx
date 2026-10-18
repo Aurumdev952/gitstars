@@ -14,7 +14,7 @@ const MAX_OUTLINE = 256
 const PAD = { scale: 1.06, world: 2.5 }
 
 function hullGeometry(g: GalaxyIndex, c: ClusterNode): { geo: BufferGeometry; range: [number, number] } | null {
-  const pts = c.members.map((i) => [g.attrs.pos[i * 3]!, g.attrs.pos[i * 3 + 1]!, g.attrs.pos[i * 3 + 2]!])
+  const pts = c.core.map((i) => [g.attrs.pos[i * 3]!, g.attrs.pos[i * 3 + 1]!, g.attrs.pos[i * 3 + 2]!])
   const core = inflate(coreMembers(pts).map((k) => pts[k]!), PAD.scale, PAD.world)
   if (core.length < 4) return null
   try {
@@ -34,7 +34,7 @@ const seg = blankSegment()
 
 /** The cluster outline for the flat map: a padded 2D hull of the members' pos2, as ribbon segments. */
 function writeOutline(buf: RibbonBuffer, g: GalaxyIndex, c: ClusterNode): number {
-  const pts: Point2[] = c.members.map((i) => [g.attrs.pos2[i * 3]!, g.attrs.pos2[i * 3 + 1]!])
+  const pts: Point2[] = c.core.map((i) => [g.attrs.pos2[i * 3]!, g.attrs.pos2[i * 3 + 1]!])
   const ring = convexHull2d(inflate(coreMembers(pts).map((k) => pts[k]!), PAD.scale, PAD.world)).slice(0, MAX_OUTLINE)
   if (ring.length < 3) return 0
   const lin = c.color.linear
