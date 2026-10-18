@@ -9,7 +9,12 @@ const flag = z
 
 const list = <T extends z.ZodType>(item: T) => z.array(item).optional().catch(undefined)
 const month = z.string().regex(/^\d{4}-\d{2}$/)
-const text = z.string().trim().min(1).max(200).optional().catch(undefined)
+// Over-long text is cut rather than dropped, so a pasted paragraph still searches.
+const text = z
+  .string()
+  .transform((s) => s.trim().slice(0, 200) || undefined)
+  .optional()
+  .catch(undefined)
 
 // The URL owns navigation and every filter. Repo and cluster push history; the rest replace.
 export const searchSchema = z.object({

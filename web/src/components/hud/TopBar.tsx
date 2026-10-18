@@ -238,7 +238,8 @@ function TopRight() {
 
 function SettingsButton() {
   const settings = useGalaxyStore((s) => s.settings)
-  const { setSettings } = useGalaxyStore((s) => s.actions)
+  const open = useGalaxyStore((s) => s.overlay === 'settings')
+  const { setSettings, setOverlay } = useGalaxyStore((s) => s.actions)
   const row = <K extends keyof Settings>(key: K, label: string, options: [Settings[K], string][]) => (
     <div className="flex items-center justify-between gap-4">
       <span className="text-[12.5px] text-ink-muted">{label}</span>
@@ -261,7 +262,7 @@ function SettingsButton() {
     </div>
   )
   return (
-    <Popover>
+    <Popover open={open} onOpenChange={(o) => setOverlay(o ? 'settings' : 'none')}>
       <PopoverTrigger asChild>
         <button type="button" aria-label="Settings" className="glass flex size-9 items-center justify-center rounded-full text-ink-muted transition-colors hover:text-ink">
           <Settings2 className="size-4" />

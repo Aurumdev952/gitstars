@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest'
+import { defaultParseSearch, defaultStringifySearch } from '@tanstack/react-router'
 import { NO_FILTERS, type Filters } from '#/lib/filters'
 import { filtersFromSearch, searchDefaults, searchFromFilters, searchSchema } from './url'
 
@@ -19,6 +20,19 @@ describe('search params', () => {
     expect(filtersFromSearch(s)).toEqual(f)
     expect(s.q).toBe('vector db')
     expect(s.lens).toBe('shaders')
+  })
+
+  it('survives the router\'s own query-string encoding', () => {
+    const f: Filters = { ...NO_FILTERS, kind: ['cli'], tag: ['c++', 'a b'], stars: [10, 2_000], starred: ['2021-01', '2021-06'] }
+    const qs = defaultStringifySearch({ ...searchFromFilters(f), q: 'vector & db?', lens: '#rust' })
+    const back = parse(defaultParseSearch(qs))
+    expect(filtersFromSearch(back)).toEqual(f)
+    expect(back.q).toBe('vector & db?')
+    expect(back.lens).toBe('#rust')
+  })
+
+  it('cuts an over-long query instead of dropping it', () => {
+    expect(parse({ q: 'x'.repeat(500) }).q).toHaveLength(200)
   })
 
   it('maps no filters to an empty patch that the defaults strip', () => {

@@ -16,6 +16,7 @@ const easeInOutCubic = (t: number) => (t < 0.5 ? 4 * t * t * t : 1 - (-2 * t + 2
 export function SceneTweens() {
   const flat = useRef({ from: 0, to: 0, t: 1 })
   const galaxyVis = useRef(new Float32Array(MAX_GALAXIES).fill(1))
+  const hasWeights = useRef(false)
 
   useEffect(() => {
     const store = useGalaxyStore
@@ -81,7 +82,10 @@ export function SceneTweens() {
       return next
     }
 
-    u.uLens.value = damp(u.uLens.value, s.lens.state === 'ready' ? 1 : 0)
+    // Between two lens queries the previous heat map holds until the new weights land.
+    if (s.lens.state === 'off' || s.lens.state === 'error') hasWeights.current = false
+    else if (s.lens.state === 'ready') hasWeights.current = true
+    u.uLens.value = damp(u.uLens.value, hasWeights.current ? 1 : 0)
 
     const g = s.galaxy
     const focus = s.focusCluster && g ? g.clusterById.get(s.focusCluster) : null

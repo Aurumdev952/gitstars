@@ -3,9 +3,11 @@ import { SlidersHorizontal } from 'lucide-react'
 import { useGalaxyStore } from '#/state/store'
 import {
   NO_FILTERS,
-  STAR_BINS_PER_DECADE,
   activeFacets,
+  binsForStarRange,
   filterColumns,
+  maxStarsOf,
+  starRangeForBins,
   toggleValue,
   type ArchivedMode,
   type FacetCounts,
@@ -99,7 +101,7 @@ function FilterForm() {
         <LanguageSection filters={filters} counts={f} onChange={set} />
         <TagSection filters={filters} counts={f} onChange={set} />
         <Section title="Stars" value={starsLabel(filters.stars)}>
-          <StarsRange filters={filters} counts={f.stars} maxStars={maxStars(cols.stars)} onChange={set} />
+          <StarsRange filters={filters} counts={f.stars} maxStars={maxStarsOf(cols)} onChange={set} />
         </Section>
         <Section title="Starred" value={filters.starred ? `${monthLabel(filters.starred[0])} – ${monthLabel(filters.starred[1])}` : 'any time'}>
           <StarredRange filters={filters} counts={f.starred} months={cols.months} onChange={set} />
@@ -245,20 +247,16 @@ function Histogram({ counts, lo, hi }: { counts: readonly number[]; lo: number; 
   )
 }
 
-const starsAt = (bin: number) => Math.round(10 ** (bin / STAR_BINS_PER_DECADE))
 
 function starsLabel(r: Filters['stars']) {
   if (!r) return 'any'
   return `${formatCompact(r[0])} – ${formatCompact(r[1])}`
 }
 
-const maxStars = (stars: Float64Array) => stars.reduce((m, s) => Math.max(m, s), 0)
 
 function StarsRange({ filters, counts, maxStars, onChange }: { filters: Filters; counts: number[]; maxStars: number; onChange: (f: Filters) => void }) {
   const bins = counts.length
-  const toBin = (stars: number, up: boolean) =>
-    stars >= maxStars ? bins : Math.min(bins, Math.round(Math.log10(Math.max(1, stars + (up ? 1 : 0))) * STAR_BINS_PER_DECADE))
-  const value: [number, number] = filters.stars ? [toBin(filters.stars[0], false), toBin(filters.stars[1], true)] : [0, bins]
+  const value = binsForStarRange(filters.stars, bins, maxStars)
   return (
     <>
       <Histogram counts={counts} lo={value[0]} hi={value[1] - 1} />
@@ -270,8 +268,7 @@ function StarsRange({ filters, counts, maxStars, onChange }: { filters: Filters;
         value={value}
         thumbLabels={['Fewest stars', 'Most stars']}
         onValueChange={([a, b]) => {
-          const full = a === 0 && b === bins
-          onChange({ ...filters, stars: full ? null : [a === 0 ? 0 : starsAt(a!), b === bins ? maxStars : starsAt(b!) - 1] })
+          onChange({ ...filters, stars: starRangeForBins(a!, b!, bins, maxStars) })
         }}
       />
     </>

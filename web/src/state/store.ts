@@ -18,7 +18,7 @@ export type Settings = {
 }
 
 /** At most one modal surface is open; Esc closes it before stepping out of the scene. */
-export type Overlay = 'none' | 'palette' | 'filters' | 'shortcuts'
+export type Overlay = 'none' | 'palette' | 'filters' | 'settings' | 'shortcuts'
 
 export type ModelStatus =
   | { state: 'idle' }

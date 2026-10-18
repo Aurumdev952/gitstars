@@ -38,13 +38,17 @@ export function LiveRegion() {
           if (c) say(`Focused ${c.name}, ${formatCount(c.members.length)} stars`)
         },
       ),
+      // Once per query: the semantic upgrade of the same query would repeat it.
       store.subscribe(
-        (s) => s.hits,
-        (h) => h && say(`${h.idx.length} results for ${h.query}`),
+        (s) => s.hits?.query ?? null,
+        (q) => {
+          const h = store.getState().hits
+          if (q && h) say(`${h.idx.length} results for ${q}`)
+        },
       ),
       store.subscribe(
         (s) => s.filtered?.count,
-        (n) => n !== undefined && say(`${formatCount(n)} of ${formatCount(store.getState().galaxy?.n ?? 0)} stars shown`),
+        (n, prev) => n !== undefined && prev !== undefined && say(`${formatCount(n)} of ${formatCount(store.getState().galaxy?.n ?? 0)} stars shown`),
       ),
       store.subscribe(
         (s) => s.lens.state,

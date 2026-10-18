@@ -97,13 +97,13 @@ export function ListView() {
           </button>
         )}
       </header>
-      <div role="row" className="flex items-center gap-4 overflow-hidden border-y border-glass-border px-5 py-2 text-[11.5px] text-ink-faint [scrollbar-gutter:stable]">
+      <div className="flex items-center gap-4 overflow-hidden border-y border-glass-border px-5 py-2 text-[11.5px] text-ink-faint [scrollbar-gutter:stable]">
         {COLUMNS.map((c) => (
           <button
             key={c.key}
             type="button"
-            role="columnheader"
-            aria-sort={effective.key === c.key ? (effective.dir === 1 ? 'ascending' : 'descending') : 'none'}
+            aria-label={`Sort by ${c.label}${effective.key === c.key ? (effective.dir === 1 ? ', ascending' : ', descending') : ''}`}
+            aria-pressed={effective.key === c.key}
             onClick={() => toggleSort(c.key)}
             className={cn('flex items-center gap-1 transition-colors hover:text-ink', c.className, c.numeric && 'justify-end', effective.key === c.key && 'text-ink-muted')}
           >
@@ -112,7 +112,7 @@ export function ListView() {
           </button>
         ))}
       </div>
-      <div ref={scroller} role="table" aria-rowcount={rows.length} className="scrollbar-thin min-h-0 flex-1 overflow-y-auto [scrollbar-gutter:stable]">
+      <div ref={scroller} className="scrollbar-thin min-h-0 flex-1 overflow-y-auto [scrollbar-gutter:stable]">
         {rows.length === 0 && <p className="px-5 py-10 text-center text-[13px] text-ink-faint">No stars match these filters.</p>}
         <div className="relative w-full" style={{ height: v.getTotalSize() }}>
           {v.getVirtualItems().map((item) => {
@@ -125,8 +125,7 @@ export function ListView() {
               <button
                 key={i}
                 type="button"
-                role="row"
-                aria-selected={selected === i}
+                aria-pressed={selected === i}
                 onClick={() => select(selected === i ? null : i)}
                 className={cn(
                   'absolute top-0 left-0 flex w-full items-center gap-4 border-b border-white/[0.035] px-5 text-left transition-colors hover:bg-white/[0.035]',

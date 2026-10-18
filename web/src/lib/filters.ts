@@ -171,6 +171,34 @@ export function starBin(stars: number): number {
   return Math.max(0, Math.floor(Math.log10(Math.max(1, stars)) * STAR_BINS_PER_DECADE))
 }
 
+/** The first whole star count in `bin`, the inverse of `starBin`'s floor of the log. */
+export function starsAtBin(bin: number): number {
+  return Math.ceil(10 ** (bin / STAR_BINS_PER_DECADE) - 1e-9)
+}
+
+/**
+ * The star range that slider handles at bin edges [lo, hi) select, so the filter keeps exactly
+ * the stars the highlighted histogram bars count. The full span is no filter.
+ */
+export function starRangeForBins(lo: number, hi: number, bins: number, maxStars: number): Filters['stars'] {
+  if (lo <= 0 && hi >= bins) return null
+  return [lo <= 0 ? 0 : starsAtBin(lo), hi >= bins ? maxStars : starsAtBin(hi) - 1]
+}
+
+/** Slider handle positions for a star range: the inverse of `starRangeForBins`. */
+export function binsForStarRange(range: Filters['stars'], bins: number, maxStars: number): [number, number] {
+  if (!range) return [0, bins]
+  const lo = Math.min(bins, Math.round(Math.log10(Math.max(1, range[0])) * STAR_BINS_PER_DECADE))
+  const hi = range[1] >= maxStars ? bins : Math.min(bins, Math.round(Math.log10(range[1] + 1) * STAR_BINS_PER_DECADE))
+  return [lo, hi]
+}
+
+export function maxStarsOf(c: FilterColumns): number {
+  let max = 0
+  for (let i = 0; i < c.n; i++) max = Math.max(max, c.stars[i]!)
+  return max
+}
+
 export function starBinCount(c: FilterColumns): number {
   let max = 0
   for (let i = 0; i < c.n; i++) max = Math.max(max, starBin(c.stars[i]!))

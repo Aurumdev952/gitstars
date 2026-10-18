@@ -28,13 +28,13 @@ export const MAX_HITS = 40
 const FRAME_RATIO = 0.9
 const FRAME_MAX = 12
 
+/** A keyword list that matched only some of the query's words counts for this much of a full one. */
+const PARTIAL_LEXICAL_WEIGHT = 0.4
+
 /**
  * Hybrid ranking: lexical and semantic lists fused by RRF, with an exact `owner/name` match, then
  * exact repo-name matches, pinned on top.
  */
-/** A keyword list that matched only some of the query's words counts for this much of a full one. */
-const PARTIAL_LEXICAL_WEIGHT = 0.4
-
 export function fuseHits(
   g: GalaxyIndex,
   query: string,

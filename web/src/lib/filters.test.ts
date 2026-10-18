@@ -1,6 +1,17 @@
 import { describe, expect, it } from 'vitest'
 import { fixtureGalaxy as g } from '#/test/fixture'
-import { NO_FILTERS, activeFacets, applyFilters, filterColumns, starBin, toggleValue, type Filters } from './filters'
+import {
+  NO_FILTERS,
+  activeFacets,
+  applyFilters,
+  binsForStarRange,
+  filterColumns,
+  maxStarsOf,
+  starBin,
+  starRangeForBins,
+  toggleValue,
+  type Filters,
+} from './filters'
 
 const cols = filterColumns(g)
 const now = Date.parse(g.data.meta.generatedAt)
@@ -83,6 +94,30 @@ describe('applyFilters', () => {
     const onlyA = applyFilters(cols, { ...NO_FILTERS, tag: [a] })
     expect(either.count).toBeGreaterThanOrEqual(onlyA.count)
     expect(either.count).toBe(g.repos.filter((r) => r.tags.includes(a) || r.tags.includes(b)).length)
+  })
+})
+
+describe('star range slider', () => {
+  const { facets } = applyFilters(cols, NO_FILTERS)
+  const bins = facets.stars.length
+  const max = maxStarsOf(cols)
+
+  it('keeps exactly the stars the highlighted histogram bars count, for every handle pair', () => {
+    for (let lo = 0; lo < bins; lo++)
+      for (let hi = lo + 1; hi <= bins; hi++) {
+        const stars = starRangeForBins(lo, hi, bins, max)
+        const shown = applyFilters(cols, { ...NO_FILTERS, stars }).count
+        const bars = facets.stars.slice(lo, hi).reduce((a, b) => a + b, 0)
+        expect(shown, `bins [${lo}, ${hi})`).toBe(bars)
+        expect(binsForStarRange(stars, bins, max)).toEqual([lo, hi])
+      }
+  })
+
+  it('puts boundary counts in the same bin the filter uses', () => {
+    // 10^0.5 = 3.16: a repo with 3 stars is in bin 0, so bin 1 starts at 4.
+    expect(starBin(3)).toBe(0)
+    expect(starRangeForBins(1, 2, 10, 1e6)).toEqual([4, 9])
+    expect(starRangeForBins(0, 10, 10, 1e6)).toBeNull()
   })
 })
 

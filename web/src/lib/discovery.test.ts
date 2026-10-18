@@ -50,7 +50,7 @@ describe('pickForgotten', () => {
     const only = new Uint8Array(repos.length)
     only[3] = 1
     const pick = pickForgotten(repos, fixtureNow, new Set(), mulberry32(1), only)
-    expect(pick === 3 || pick === null).toBe(true)
+    expect(pick).toBe(discoveryScore(repos[3]!, fixtureNow, false) > 0 ? 3 : null)
     expect(pickForgotten(repos, fixtureNow, new Set(), mulberry32(1), new Uint8Array(repos.length))).toBeNull()
   })
 })

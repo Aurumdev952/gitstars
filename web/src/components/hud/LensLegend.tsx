@@ -27,7 +27,6 @@ export function LensLegend() {
         <motion.div
           ref={ref}
           key="lens"
-          role="status"
           initial={{ opacity: 0, y: 12 }}
           animate={{ opacity: 1, y: 0 }}
           exit={{ opacity: 0, y: 12 }}
