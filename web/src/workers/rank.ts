@@ -1,5 +1,8 @@
 export type Ranked = { idx: Int32Array; score: Float32Array }
 
+/** `partial` marks results that matched only some query words (MiniSearch's OR fallback). */
+export type LexicalRanked = Ranked & { partial: boolean }
+
 export const EMPTY_RANKED: Ranked = { idx: new Int32Array(0), score: new Float32Array(0) }
 
 /** Indices of the k largest scores, best first. Ties keep the lower index first. */
@@ -41,18 +44,22 @@ export const RRF_K = 60
 export type Fused = { idx: number[]; score: number[] }
 
 /**
- * Reciprocal rank fusion: each list contributes 1/(k + rank) per item, rank starting at 1.
+ * Reciprocal rank fusion: each list contributes weight/(k + rank) per item, rank starting at 1.
  * `pinned` items go first in the order given, regardless of score.
  */
-export function rrf(lists: readonly ArrayLike<number>[], opts: { k?: number; pinned?: readonly number[]; limit?: number } = {}): Fused {
+export function rrf(
+  lists: readonly ArrayLike<number>[],
+  opts: { k?: number; pinned?: readonly number[]; limit?: number; weights?: readonly number[] } = {},
+): Fused {
   const k = opts.k ?? RRF_K
   const fused = new Map<number, number>()
-  for (const list of lists) {
+  lists.forEach((list, l) => {
+    const w = opts.weights?.[l] ?? 1
     for (let r = 0; r < list.length; r++) {
       const i = list[r]!
-      fused.set(i, (fused.get(i) ?? 0) + 1 / (k + r + 1))
+      fused.set(i, (fused.get(i) ?? 0) + w / (k + r + 1))
     }
-  }
+  })
   const pinned = [...new Set(opts.pinned ?? [])]
   const pinnedSet = new Set(pinned)
   const rest = [...fused.entries()].filter(([i]) => !pinnedSet.has(i)).sort((a, b) => b[1] - a[1] || a[0] - b[0])

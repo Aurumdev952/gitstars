@@ -21,6 +21,13 @@ describe('fuseHits', () => {
     expect(both.idx).toContain(4)
   })
 
+  it('lets semantic results outrank a keyword list that matched only some words', () => {
+    const full = fuseHits(g, 'tools to run llms', [1, 2, 3], [9, 8, 7])
+    const partial = fuseHits(g, 'tools to run llms', [1, 2, 3], [9, 8, 7], { partialLexical: true })
+    expect(full.idx.slice(0, 2)).toEqual([1, 9])
+    expect(partial.idx.slice(0, 3)).toEqual([9, 8, 7])
+  })
+
   it('frames only the hits close to the best score, at most 12', () => {
     const many = Array.from({ length: 30 }, (_, i) => i)
     const hits = fuseHits(g, 'zzz', many, many)

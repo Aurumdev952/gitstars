@@ -32,7 +32,16 @@ const FRAME_MAX = 12
  * Hybrid ranking: lexical and semantic lists fused by RRF, with an exact `owner/name` match, then
  * exact repo-name matches, pinned on top.
  */
-export function fuseHits(g: GalaxyIndex, query: string, lexical: ArrayLike<number>, semantic: ArrayLike<number> | null): SearchHits {
+/** A keyword list that matched only some of the query's words counts for this much of a full one. */
+const PARTIAL_LEXICAL_WEIGHT = 0.4
+
+export function fuseHits(
+  g: GalaxyIndex,
+  query: string,
+  lexical: ArrayLike<number>,
+  semantic: ArrayLike<number> | null,
+  opts: { partialLexical?: boolean } = {},
+): SearchHits {
   const q = query.trim().toLowerCase()
   const pinned: number[] = []
   const exact = g.byFullName.get(q)
@@ -44,7 +53,10 @@ export function fuseHits(g: GalaxyIndex, query: string, lexical: ArrayLike<numbe
     }
   }
   const lists = semantic ? [lexical, Array.from(semantic).slice(0, SEMANTIC_DEPTH)] : [lexical]
-  const fused = rrf(lists, { pinned, limit: MAX_HITS })
+  // A long natural-language query rarely matches every word; its OR fallback ("tools", "run") is
+  // noise next to the semantic list, so it votes with less weight.
+  const weights = [opts.partialLexical && semantic ? PARTIAL_LEXICAL_WEIGHT : 1, 1]
+  const fused = rrf(lists, { pinned, limit: MAX_HITS, weights })
   const best = fused.score[0] ?? 0
   const frame: number[] = []
   for (let r = 0; r < fused.idx.length && frame.length < FRAME_MAX; r++) {

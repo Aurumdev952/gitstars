@@ -2,7 +2,7 @@ import * as Comlink from 'comlink'
 import MiniSearch from 'minisearch'
 import { loadEmbedder, type Device, type Embedder, type ModelProgress } from './embedder'
 import type { LexDoc } from '#/lib/search'
-import { EMPTY_RANKED, cosineAll, overlapAt10, topK, type Ranked } from './rank'
+import { EMPTY_RANKED, cosineAll, overlapAt10, topK, type LexicalRanked, type Ranked } from './rank'
 
 export type InitOptions = {
   vectorsUrl: string
@@ -105,12 +105,13 @@ const api = {
     return embedder.then((e) => ({ device: e.device }))
   },
 
-  lexical(text: string, k: number): Ranked {
-    if (!lexIndex || !text.trim()) return EMPTY_RANKED
+  lexical(text: string, k: number): LexicalRanked {
+    if (!lexIndex || !text.trim()) return { ...EMPTY_RANKED, partial: false }
     let hits = lexIndex.search(text)
-    if (hits.length === 0) hits = lexIndex.search(text, { combineWith: 'OR' })
+    const partial = hits.length === 0
+    if (partial) hits = lexIndex.search(text, { combineWith: 'OR' })
     hits = hits.slice(0, k)
-    return { idx: Int32Array.from(hits, (h) => h.id as number), score: Float32Array.from(hits, (h) => h.score) }
+    return { idx: Int32Array.from(hits, (h) => h.id as number), score: Float32Array.from(hits, (h) => h.score), partial }
   },
 
   async semantic(text: string, k: number): Promise<Ranked> {

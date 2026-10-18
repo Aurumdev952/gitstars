@@ -65,7 +65,7 @@ async function runQuery(g: GalaxyIndex, query: string | null, modelReady: boolea
   if (!modelReady) return
   const semantic = await sess.api.semantic(query, MAX_HITS)
   if (seq !== querySeq) return
-  setHits(fuseHits(g, query, lexical.idx, semantic.idx))
+  setHits(fuseHits(g, query, lexical.idx, semantic.idx, { partialLexical: lexical.partial }))
 }
 
 async function runLens(g: GalaxyIndex, query: string | null) {
@@ -137,5 +137,5 @@ export async function timeQuery(query: string) {
   const ready = useGalaxyStore.getState().model.state === 'ready'
   const semantic = ready ? await sess.api.semantic(query, MAX_HITS) : null
   const t2 = performance.now()
-  return { lexicalMs: t1 - t0, semanticMs: semantic ? t2 - t1 : null, hits: fuseHits(g, query, lexical.idx, semantic?.idx ?? null).idx.slice(0, 10) }
+  return { lexicalMs: t1 - t0, semanticMs: semantic ? t2 - t1 : null, hits: fuseHits(g, query, lexical.idx, semantic?.idx ?? null, { partialLexical: lexical.partial }).idx.slice(0, 10) }
 }
