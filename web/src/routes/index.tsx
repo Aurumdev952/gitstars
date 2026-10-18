@@ -1,12 +1,14 @@
-import { useEffect } from 'react'
+import { lazy, Suspense, useEffect } from 'react'
 import { ClientOnly, createFileRoute, stripSearchParams, useNavigate } from '@tanstack/react-router'
-import { GalaxyCanvas } from '#/components/galaxy/GalaxyCanvas'
 import { Hud } from '#/components/hud/Hud'
 import { StarMark } from '#/components/hud/TopBar'
 import { GalaxyLoadError, loadGalaxy, resolveDataSource } from '#/lib/load'
 import { useGalaxyStore } from '#/state/store'
 import { bindNavigate, filtersFromSearch, searchDefaults, searchSchema } from '#/state/url'
 import { startSearchRunner, warmModel } from '#/workers/searchClient'
+
+// three, R3F and the post chain load in their own chunk, in parallel with galaxy.json.
+const GalaxyCanvas = lazy(() => import('#/components/galaxy/GalaxyCanvas'))
 
 export const Route = createFileRoute('/')({
   validateSearch: searchSchema,
@@ -55,6 +57,7 @@ function Home() {
       focusCluster,
       view: search.view,
       frozen: search.freeze,
+      seed: search.seed ?? null,
       query: search.q ?? null,
       lensQuery: search.lens ?? null,
       filters: filtersFromSearch(search),
@@ -64,7 +67,9 @@ function Home() {
   return (
     <main className="h-full">
       <ClientOnly>
-        <GalaxyCanvas debug={search.debug} />
+        <Suspense fallback={null}>
+          <GalaxyCanvas debug={search.debug} />
+        </Suspense>
       </ClientOnly>
       <Hud dataName={dataName} />
     </main>

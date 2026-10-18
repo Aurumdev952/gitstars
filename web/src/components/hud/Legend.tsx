@@ -17,6 +17,7 @@ export function ClusterDot({ color, className }: { color: string; className?: st
 export function Legend() {
   const g = useGalaxyStore((s) => s.galaxy)
   const focusCluster = useGalaxyStore((s) => s.focusCluster)
+  const visible = useGalaxyStore((s) => (s.filtered && s.filtered.count < s.filtered.visible.length ? s.filtered.visible : null))
   const { hoverCluster, focus } = useGalaxyStore((s) => s.actions)
   const ref = useRef<HTMLElement>(null)
   useOccluder(ref)
@@ -30,8 +31,9 @@ export function Legend() {
     >
       <h2 className="px-2.5 pb-1.5 text-[11.5px] font-medium text-ink-faint">Galaxies</h2>
       <ul className="scrollbar-thin max-h-[42vh] overflow-y-auto">
-        {g.galaxies.map((c) => {
+        {g.galaxies.map((c, k) => {
           const active = focusCluster === c.id
+          const shown = visible ? c.members.reduce((n, i) => n + visible[i]!, 0) : c.members.length
           return (
             <li key={c.id}>
               <button
@@ -50,8 +52,15 @@ export function Legend() {
                 <ClusterDot color={c.color.css} />
                 <span className="min-w-0 flex-1 truncate">{c.name}</span>
                 <span className="tabular font-mono text-[11px] text-ink-faint group-hover:text-ink-muted">
-                  {c.members.length}
+                  {visible ? (
+                    <>
+                      <span className={shown > 0 ? 'text-ink-muted' : undefined}>{shown}</span>/{c.members.length}
+                    </>
+                  ) : (
+                    c.members.length
+                  )}
                 </span>
+                {k < 9 && <span className="w-3 text-right font-mono text-[10px] text-ink-faint/60 group-hover:text-ink-faint">{k + 1}</span>}
               </button>
             </li>
           )
