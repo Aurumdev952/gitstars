@@ -175,7 +175,7 @@ async def run_name(ctx: Ctx, reserve: int = openrouter.FREE_RESERVE) -> dict:
     quota = await read_quota(key)
     if quota.headroom(0) <= 0:
         raise RuntimeError("no free requests or credit headroom left")
-    pool, transport = await openrouter.build_pool(key)
+    pool, transport = await openrouter.build_pool(key, exclude=ctx.db.disabled_models())
     names = layout["names"]
     repos = {r.full_name: r for r in ctx.db.repos()}
     vectors = ctx.db.embedding_matrix("cluster", names)
@@ -208,7 +208,10 @@ async def run_name(ctx: Ctx, reserve: int = openrouter.FREE_RESERVE) -> dict:
                 )
                 cn = _parse_name(raw)
             except (TransportError, ValueError, ValidationError) as exc:
-                pool.release(slot, False, getattr(exc, "retry_after", None), disable=getattr(exc, "permanent", False))
+                permanent = getattr(exc, "permanent", False)
+                pool.release(slot, False, getattr(exc, "retry_after", None), disable=permanent)
+                if permanent:
+                    ctx.db.disable_model(slot.id, str(exc))
                 ctx.db.log_llm_call(cid, "openrouter", slot.id, f"error: {exc}"[:200], None)
                 continue
             pool.release(slot, True)

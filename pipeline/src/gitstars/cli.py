@@ -243,6 +243,8 @@ def status() -> None:
             f"fetch: viewer {fs['viewer']} · starred {fs['total_starred']} · own dropped {fs['own_dropped']} · kept {fs['kept']}"
             f" · with README {fs['with_readme']} · with homepage {fs['with_homepage']}"
         )
+    for model, v in sorted((ctx.db.get_global("disabled_models") or {}).items()):
+        console.print(Text(f"disabled model: {model} ({v['reason'][:80]})"))
     calls = ctx.db.conn.execute("SELECT provider, SUM(outcome='ok'), COUNT(*) FROM llm_calls GROUP BY provider").fetchall()
     for prov, ok, total in calls:
         console.print(f"llm calls ({prov}): {ok} ok / {total} total")

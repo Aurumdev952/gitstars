@@ -78,6 +78,8 @@ CREATE TABLE IF NOT EXISTS globals (
 );
 """
 
+DISABLED_MODEL_TTL_S = 7 * 86400
+
 
 class DB:
     def __init__(self, path: Path | str):
@@ -212,6 +214,17 @@ class DB:
         if missing:
             raise LookupError(f"{len(missing)} repos have no '{space}' embedding (first: {missing[0]}); run `gs embed`")
         return np.stack([np.frombuffer(found[n], dtype=np.float32) for n in names])
+
+    def disable_model(self, model: str, reason: str) -> None:
+        """Remember a model that refused us permanently (HTTP 403) so later runs leave it out of the pool."""
+        disabled = self.get_global("disabled_models") or {}
+        disabled[model] = {"reason": reason[:200], "at": time.time()}
+        self.put_global("disabled_models", disabled)
+
+    def disabled_models(self, max_age_s: float = DISABLED_MODEL_TTL_S) -> frozenset[str]:
+        """Expiring, because an upstream can lift a restriction; one probe request a week is cheap."""
+        now = time.time()
+        return frozenset(m for m, v in (self.get_global("disabled_models") or {}).items() if now - v["at"] < max_age_s)
 
     def get_global(self, name: str) -> Any | None:
         row = self.conn.execute("SELECT payload FROM globals WHERE name = ?", (name,)).fetchone()

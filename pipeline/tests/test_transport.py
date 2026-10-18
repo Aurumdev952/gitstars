@@ -27,3 +27,26 @@ def test_local_provider_shape():
     assert transport.base_url == "http://127.0.0.1:8000/v1"
     assert body["temperature"] == 0.3 and body["chat_template_kwargs"] == {"enable_thinking": False}
     assert body["response_format"]["type"] == "json_schema"
+
+
+async def test_403_disables_the_model_unless_it_is_a_moderation_flag():
+    import httpx
+    import pytest
+
+    from gitstars.llm.openrouter import TransportError
+
+    bodies = iter(
+        [
+            '{"error":{"code":403,"message":"This model is only available on agentic harnesses"}}',
+            '{"error":{"code":403,"message":"Input was flagged by moderation"}}',
+        ]
+    )
+    t = ChatTransport("https://x/api/v1", {})
+    t.client = httpx.AsyncClient(transport=httpx.MockTransport(lambda req: httpx.Response(403, text=next(bodies))))
+    slot = ModelSlot("m:free")
+    with pytest.raises(TransportError) as harness:
+        await t.complete(slot, MSGS, SUMMARY_SCHEMA)
+    with pytest.raises(TransportError) as moderated:
+        await t.complete(slot, MSGS, SUMMARY_SCHEMA)
+    assert harness.value.permanent and not moderated.value.permanent
+    await t.aclose()

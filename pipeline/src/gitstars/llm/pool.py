@@ -196,11 +196,17 @@ def eligible(m: dict[str, Any]) -> bool:
     )
 
 
-def rank(catalog: Iterable[dict[str, Any]], healthy: dict[str, bool], size: int = POOL_SIZE, rpm: int = 18) -> list[ModelSlot]:
-    """Bigger first, then newer; unknown sizes after known ones. Drops ineligible, small, and unhealthy models."""
+def rank(
+    catalog: Iterable[dict[str, Any]],
+    healthy: dict[str, bool],
+    size: int = POOL_SIZE,
+    rpm: int = 18,
+    exclude: frozenset[str] = frozenset(),
+) -> list[ModelSlot]:
+    """Bigger first, then newer; unknown sizes after known ones. Drops ineligible, small, unhealthy and excluded models."""
     slots: list[ModelSlot] = []
     for m in catalog:
-        if not eligible(m) or not healthy.get(m["id"], False):
+        if not eligible(m) or not healthy.get(m["id"], False) or m["id"] in exclude:
             continue
         params = parse_params_b(m["id"], m.get("description") or "")
         if params is not None and params < MIN_PARAMS_B:

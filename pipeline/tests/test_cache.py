@@ -1,5 +1,6 @@
 import json
 import sqlite3
+import time
 
 import pytest
 from rich.console import Console
@@ -10,7 +11,9 @@ from gitstars.config import Paths
 from gitstars.context import Ctx
 from gitstars.db import DB
 from gitstars.domain import GateVerdict, ReadmeQuality, Repo, sha
-from gitstars.summarize import job_for, load_summary, pending_jobs
+from gitstars.llm.openrouter import TransportError
+from gitstars.llm.pool import ModelSlot, Pool, rank
+from gitstars.summarize import RunState, job_for, load_summary, pending_jobs
 
 VALID = json.dumps(
     {
@@ -120,3 +123,34 @@ def test_limit_counts_repos_that_need_work(ctx):
     ctx.limit = 2
     assert [j.repo.full_name for j in pending_jobs(ctx)] == ["o/r2", "o/r3"]
     assert [j[0].full_name for j in pending_gate_jobs(ctx)] == ["o/r2", "o/r3"]
+
+
+class RefusingTransport:
+    """Model `a:free` refuses for good; `b:free` answers."""
+
+    async def complete(self, slot, messages, schema):
+        if slot.id == "a:free":
+            raise TransportError("http 403: only available on agentic harnesses", permanent=True)
+        return VALID
+
+
+async def test_permanent_refusal_is_remembered_across_runs(ctx):
+    r = repo("o/a")
+    ctx.db.upsert_repos([r])
+    pool = Pool([ModelSlot("a:free"), ModelSlot("b:free")], concurrency=2)
+    state = RunState("openrouter", pool, RefusingTransport(), decider=None)
+    summary, model = await summarize._generate(state, ctx, r, "card text", None, set())
+    assert model == "b:free"
+    assert ctx.db.disabled_models() == {"a:free"}
+
+    catalog = [
+        {"id": mid, "architecture": {"output_modalities": ["text"]}, "created": 1, "description": "a 70B model"}
+        for mid in ("a:free", "b:free", "c:free")
+    ]
+    healthy = {m["id"]: True for m in catalog}
+    slots = rank(catalog, healthy, size=2, exclude=ctx.db.disabled_models())
+    assert [s.id for s in slots] == ["b:free", "c:free"], "the refused model gives up its slot"
+
+    stale = {"a:free": {"reason": "x", "at": time.time() - 8 * 86400}}
+    ctx.db.put_global("disabled_models", stale)
+    assert ctx.db.disabled_models() == frozenset(), "a refusal expires after a week"

@@ -74,8 +74,10 @@ class ChatTransport:
         if resp.status_code in (401, 402):
             raise FatalProviderError(f"http {resp.status_code}: {resp.text[:200]}")
         if resp.status_code == 403:
-            # Per-model refusal, e.g. "only available on agentic harnesses"; this model will never serve us.
-            raise TransportError(f"http 403: {resp.text[:160]}", permanent=True)
+            # A moderation flag is about this input; anything else (e.g. "only available on agentic harnesses")
+            # means the model will never serve us.
+            moderated = any(w in resp.text.lower() for w in ("moderation", "flagged"))
+            raise TransportError(f"http 403: {resp.text[:160]}", permanent=not moderated)
         if resp.status_code == 429:
             raise TransportError("http 429", retry_after=_retry_after(resp))
         if resp.status_code >= 400:
@@ -126,11 +128,12 @@ async def fetch_health(client: httpx.AsyncClient, model_ids: list[str]) -> dict[
     return dict(await asyncio.gather(*(one(m) for m in model_ids)))
 
 
-async def build_pool(key: str) -> tuple[Pool, ChatTransport]:
+async def build_pool(key: str, exclude: frozenset[str] = frozenset()) -> tuple[Pool, ChatTransport]:
+    """`exclude`: models that refused us for good on an earlier run (see `DB.disabled_models`)."""
     async with httpx.AsyncClient(timeout=30.0) as client:
         catalog = await fetch_catalog(client)
-        health = await fetch_health(client, [m["id"] for m in catalog if eligible(m)])
-    slots = rank(catalog, health, rpm=PER_MODEL_RPM)
+        health = await fetch_health(client, [m["id"] for m in catalog if eligible(m) and m["id"] not in exclude])
+    slots = rank(catalog, health, rpm=PER_MODEL_RPM, exclude=exclude)
     return Pool(slots, concurrency=MAX_IN_FLIGHT, name="openrouter"), ChatTransport(OPENROUTER_API, openrouter_headers(key))
 
 

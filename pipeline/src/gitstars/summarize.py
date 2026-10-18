@@ -73,6 +73,8 @@ async def _generate(
             summary = await _complete_and_parse(state, slot, messages)
         except TransportError as exc:
             state.pool.release(slot, False, exc.retry_after, disable=exc.permanent)
+            if exc.permanent:
+                ctx.db.disable_model(slot.id, str(exc))
             ctx.db.log_llm_call(repo.full_name, state.provider, slot.id, f"error: {exc}"[:200], time.monotonic() - t0)
             continue
         except FatalProviderError:
@@ -224,7 +226,7 @@ async def run_summarize(ctx: Ctx, provider: Provider = "openrouter", reserve: in
     if provider == "local":
         pool, transport = local.build_pool()
     else:
-        pool, transport = await openrouter.build_pool(key)
+        pool, transport = await openrouter.build_pool(key, exclude=ctx.db.disabled_models())
     state = RunState(provider, pool, transport, dec.Decider(key))
 
     jobs = pending_jobs(ctx)
