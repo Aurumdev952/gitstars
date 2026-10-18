@@ -12,8 +12,9 @@ const SEGMENTS = 20
 const FADE_S = 0.15
 const STAGGER_S = 0.04
 const FLOW_SPEED = 0.5
-// Above 1 so arcs cross the bloom threshold and glow like the stars they join. Baked into the
-// vertex colours: drei's Line forces its colour to white whenever vertexColors is set.
+// HDR gains so the travelling pulses (FLOW_GAIN times their opacity) cross the bloom threshold
+// while the base arcs stay just under it. Baked into the vertex colours: drei's Line forces its
+// colour to white whenever vertexColors is set.
 const ARC_GAIN = 1.4
 const FLOW_GAIN = 2.4
 
