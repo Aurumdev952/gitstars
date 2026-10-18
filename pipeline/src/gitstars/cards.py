@@ -13,7 +13,7 @@ from gitstars.config import github_token, openrouter_key
 from gitstars.context import Ctx, cache_key, sha
 from gitstars.db import DB
 from gitstars.domain import Card, GateVerdict, HomepageDoc, ReadmeQuality, Repo, TreeEntry
-from gitstars.extract import assemble, build_card, choose_blob_paths
+from gitstars.extract import assemble, build_card, choose_blob_paths, symlink_target
 from gitstars.github import GitHub
 from gitstars.homepage import HomepageFetcher, normalize_url, worth_fetching
 from gitstars.llm.openrouter import MIN_BALANCE_USD, read_quota
@@ -21,8 +21,8 @@ from gitstars.tokens import count_tokens
 
 TREE_VERSION = 1
 HOMEPAGE_VERSION = 1
-CARD_VERSION = 1
-GATE_VERSION = 1
+CARD_VERSION = 2
+GATE_VERSION = 2
 GATE_CONCURRENCY = 8
 
 
@@ -71,6 +71,8 @@ async def run_fetch(ctx: Ctx) -> dict:
                 ctx.key(r, TREE_VERSION),
                 {"entries": [e.model_dump() for e in trees[r.full_name]], "blobs": wanted[r.full_name][1]},
             )
+        backfilled = await fill_missing_blobs(ctx, gh, kept)
+        symlinks = await resolve_symlinks(ctx.db, gh, kept)
     finally:
         await gh.aclose()
 
@@ -84,6 +86,8 @@ async def run_fetch(ctx: Ctx) -> dict:
         "with_homepage": sum(1 for r in repos if normalize_url(r.homepage)),
         "trees_fetched": len(pending),
         "blobs_requested": sum(len(p) for _, p in wanted.values()),
+        "blobs_backfilled": backfilled,
+        "symlinks_resolved": symlinks,
         "stars_seconds": round(stars_s, 1),
         "blobs_seconds": round(blobs_s, 1),
         "seconds": round(time.monotonic() - t0, 1),
@@ -91,6 +95,51 @@ async def run_fetch(ctx: Ctx) -> dict:
     }
     ctx.db.put_global("fetch", stats)
     return stats
+
+
+async def fill_missing_blobs(ctx: Ctx, gh: GitHub, repos: list[Repo]) -> int:
+    """Read blobs the current selection rules want but an earlier run never requested (rules change; trees don't)."""
+    wanted: dict[str, tuple[str, list[str]]] = {}
+    for r in repos:
+        tree_art = ctx.db.get_artifact("tree", ctx.key(r, TREE_VERSION))
+        if not tree_art:
+            continue
+        stored = ctx.db.blobs(r.full_name, r.head_oid)
+        entries = [TreeEntry.model_validate(e) for e in tree_art["entries"]]
+        missing = [p for p in choose_blob_paths(entries) if p not in stored]
+        if missing:
+            wanted[r.full_name] = (r.head_oid, missing)
+    if not wanted:
+        return 0
+    fetched = await gh.blobs(wanted)
+    for name, blobs in fetched.items():
+        repo_oid = wanted[name][0]
+        ctx.db.put_blobs(name, repo_oid, blobs)
+    return sum(len(p) for _, p in wanted.values())
+
+
+async def resolve_symlinks(db: DB, gh: GitHub, repos: list[Repo]) -> int:
+    """Monorepos often symlink README.md to a package README; GitHub serves the link's target path as the
+    blob text. Scans every stored blob, not just this run's, so data fetched before this fix converges too."""
+    wanted: dict[str, tuple[str, list[str]]] = {}
+    links: dict[str, dict[str, str]] = {}
+    for r in repos:
+        for path, text in db.blobs(r.full_name, r.head_oid).items():
+            target = symlink_target(path, text)
+            if target:
+                links.setdefault(r.full_name, {})[path] = target
+                wanted.setdefault(r.full_name, (r.head_oid, []))[1].append(target)
+    if not wanted:
+        return 0
+    fetched = await gh.blobs(wanted)
+    resolved = 0
+    for r in repos:
+        for path, target in links.get(r.full_name, {}).items():
+            text = fetched.get(r.full_name, {}).get(target)
+            if text and not symlink_target(target, text):
+                db.put_blobs(r.full_name, r.head_oid, {path: text})
+                resolved += 1
+    return resolved
 
 
 def _has_readme(db: DB, r: Repo) -> bool:
@@ -198,7 +247,7 @@ async def run_gate(ctx: Ctx) -> dict:
     if quota.balance_usd <= MIN_BALANCE_USD:
         raise RuntimeError(f"credit balance ${quota.balance_usd:.2f} is at or below ${MIN_BALANCE_USD:.2f}; not gating")
     jobs: list[tuple[Repo, Card, str]] = []
-    for repo in ctx.db.repos(order="stars", limit=ctx.limit):
+    for repo in ctx.selected("stars")[: ctx.limit]:
         loaded = load_card(ctx.db, repo)
         if loaded is None:
             continue

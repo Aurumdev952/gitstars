@@ -146,7 +146,12 @@ def test_assemble_respects_budget_and_gate():
     partial = rich.model_copy(update={"readme_quality": ReadmeQuality.partial, "keep": {**rich.keep, CandidateId.homepage: 0.8}})
     text = assemble(card, partial, chars4, budget=1800)
     assert "## README (head)" in text and "v1 added things" in text and "Homepage text" in text
-    assert len(text.split("## README (head)\n")[1].split("\n\n")[0]) <= 2002
+    readme_part = lambda t: t.split("## README (head)\n")[1].split("\n\n")[0]  # noqa: E731
+    assert len(readme_part(text)) > 2000, "unused budget goes to the README"
+    tight = assemble(card, partial, chars4, budget=600)
+    assert chars4(tight) <= 600
+    assert 2000 <= len(readme_part(tight)) <= 2300, "README shrinks toward its 2k head while docs stay whole"
+    assert "v1 added things" in tight and "Homepage text" in tight
 
 
 def test_build_card_uses_readme_fallback_and_homepage():
@@ -156,3 +161,26 @@ def test_build_card_uses_readme_fallback_and_homepage():
     assert card.candidates[CandidateId.readme].source == "README.rst"
     assert card.languages == ["Go"]
     assert CandidateId.homepage not in card.candidates
+
+
+def test_symlink_target_detects_monorepo_readme_links():
+    from gitstars.extract import symlink_target
+
+    assert symlink_target("README.md", "packages/next/README.md") == "packages/next/README.md"
+    assert symlink_target("README.md", "./cli/README.md\n") == "cli/README.md"
+    assert symlink_target("docs/README.md", "../packages/core/README.md") == "packages/core/README.md"
+    assert symlink_target("README.md", "# Title\nreal content.md") is None
+    assert symlink_target("README.md", "../../outside.md") is None
+    assert symlink_target("README.md", "Moved to Codeberg") is None
+
+
+def test_readme_fallback_follows_github_lookup_order():
+    from gitstars.extract import readme_fallback
+
+    docs_only = [TreeEntry(path="docs", type="tree"), TreeEntry(path="docs/README.md", type="blob")]
+    assert readme_fallback(docs_only) == "docs/README.md"
+    both = docs_only + [TreeEntry(path=".github/README.md", type="blob"), TreeEntry(path="README.asciidoc", type="blob")]
+    assert readme_fallback(both) == "README.asciidoc", "root wins, whatever the extension"
+    card = build_card(_repo(), docs_only, {"docs/README.md": "# pipx\nInstall apps in isolated envs."}, None)
+    assert card.candidates[CandidateId.readme].source == "docs/README.md"
+    assert CandidateId.docs_index not in card.candidates, "the same file is not offered twice"

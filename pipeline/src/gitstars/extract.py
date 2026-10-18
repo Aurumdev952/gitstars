@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import html
 import json
+import posixpath
 import re
 import tomllib
 from collections.abc import Callable
@@ -333,13 +334,34 @@ DOC_CANDIDATES: dict[str, CandidateId] = {
     "changelog.md": CandidateId.changelog_head,
 }
 ROOT_MANIFESTS = {"package.json", "pyproject.toml", "Cargo.toml", "go.mod", "composer.json", "deno.json", "deno.jsonc"}
-README_NAMES = re.compile(r"^readme(\.(md|mdx|markdown|rst|txt|org|adoc))?$", re.I)
+README_NAMES = re.compile(r"^readme(\.(md|mdx|markdown|rst|txt|org|adoc|asciidoc))?$", re.I)
+README_DIRS = ("", ".github", "docs")
 
 
 def readme_fallback(entries: list[TreeEntry]) -> str | None:
-    roots = [e.path for e in entries if "/" not in e.path and e.type == "blob" and README_NAMES.match(e.path)]
-    roots.sort(key=lambda p: (not p.lower().endswith((".md", ".mdx", ".markdown")), len(p)))
-    return roots[0] if roots else None
+    """The README GitHub would show: the root first, then `.github/`, then `docs/`; Markdown preferred."""
+    for d in README_DIRS:
+        names = [
+            e.path
+            for e in entries
+            if e.type == "blob" and posixpath.dirname(e.path) == d and README_NAMES.match(posixpath.basename(e.path))
+        ]
+        if names:
+            return min(names, key=lambda p: (not p.lower().endswith((".md", ".mdx", ".markdown")), len(p)))
+    return None
+
+
+_DOC_EXT = (".md", ".mdx", ".markdown", ".rst", ".txt", ".org", ".adoc")
+
+
+def symlink_target(path: str, text: str | None) -> str | None:
+    """The repo path a symlinked doc points at, when `text` is a link target rather than content."""
+    t = (text or "").strip()
+    if not t or len(t) > 255 or any(c.isspace() for c in t) or not t.lower().endswith(_DOC_EXT):
+        return None
+    base = posixpath.dirname(path)
+    target = posixpath.normpath(posixpath.join(base, t))
+    return None if target.startswith("..") or target == path else target
 
 
 def choose_blob_paths(entries: list[TreeEntry]) -> list[str]:
@@ -383,7 +405,7 @@ def build_card(repo: Repo, tree: list[TreeEntry], blobs: dict[str, str | None], 
 
     for path, text in blobs.items():
         cid = DOC_CANDIDATES.get(path.lower())
-        if not cid or not text or cid in candidates:
+        if not cid or not text or cid in candidates or path == readme_path:
             continue
         cleaned = clean_markdown(text)
         cap = CHANGELOG_HEAD_CHARS if cid is CandidateId.changelog_head else DOC_CHARS
@@ -462,7 +484,9 @@ def assemble(card: Card, gate: GateVerdict | None, count: TokenCounter, budget: 
             sections.append(Section("README", _cut(readme, RICH_README_CHARS), 1200))
     else:
         if readme and (gate is None or gate.kept(CandidateId.readme) or quality is not ReadmeQuality.template):
-            sections.append(Section("README (head)", _cut(readme, HEAD_README_CHARS), 600))
+            # Up to the rich cap, but trimmed first down to its 2k head, so leftover budget goes to the README
+            # instead of going unused when there are no docs (awesome lists, thin repos).
+            sections.append(Section("README (head)", _cut(readme, RICH_README_CHARS), HEAD_README_CHARS))
         for cid in (CandidateId.agents_md, CandidateId.claude_md, CandidateId.docs_index, CandidateId.architecture, CandidateId.changelog_head):
             if kept(cid):
                 sections.append(Section(f"{cid.value} ({card.candidates[cid].source})", _cut(card.candidate_text(cid), DOC_CHARS), 300))
