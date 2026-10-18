@@ -242,3 +242,18 @@ def test_no_card_until_the_tree_at_the_current_commit_is_fetched(ctx):
     ctx.db.upsert_repos([r.model_copy(update={"head_oid": "b2"})])
     run_card(ctx)
     assert load_card(ctx.db, ctx.db.repo("o/a")) is None, "fetch crashed before the new tree landed"
+
+
+class RateLimitedTransport:
+    async def complete(self, slot, messages, schema):
+        if slot.id == "a:free":
+            raise TransportError("http 429", retry_after=30.0, billed=False)
+        return VALID
+
+
+async def test_429s_do_not_spend_the_free_budget(ctx):
+    r = repo("o/a")
+    pool = Pool([ModelSlot("a:free", rpm=None), ModelSlot("b:free", rpm=None)], concurrency=2)
+    state = RunState("openrouter", pool, RateLimitedTransport(), decider=None, budget=RequestBudget(2))
+    _, model = await summarize._generate(state, ctx, r, "card text", None, set())
+    assert model == "b:free" and state.budget.remaining == 1 and state.unbilled == 1

@@ -226,6 +226,8 @@ async def run_name(ctx: Ctx, provider: Provider = "openrouter", reserve: int = N
                 )
                 cn = _parse_name(raw)
             except (TransportError, ValueError, ValidationError) as exc:
+                if not getattr(exc, "billed", True):
+                    budget.refund()
                 permanent = getattr(exc, "permanent", False)
                 pool.release(slot, False, getattr(exc, "retry_after", None), disable=permanent)
                 if permanent:

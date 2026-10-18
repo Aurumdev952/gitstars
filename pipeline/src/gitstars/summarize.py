@@ -28,7 +28,10 @@ SUMMARY_VERSION = 1
 MAX_JUDGE_RETRIES = 2
 # Free upstreams 429 often (22 of 66 requests in the first 30-repo run); a 429 is cheap, so hop further.
 MAX_MODEL_HOPS = 6
-BATCH_SIZE = 30
+JOBS_IN_FLIGHT = 30
+QUOTA_CHECK_EVERY = 25
+# A job that finds no untried model with capacity for this long is left for a later run.
+MODEL_WAIT_S = 120.0
 
 
 @dataclass
@@ -53,6 +56,7 @@ class RunState:
     decider: dec.Decider
     budget: RequestBudget = field(default_factory=RequestBudget)
     requests: int = 0
+    unbilled: int = 0
     judged: int = 0
     passed: int = 0
     failed_repos: int = 0
@@ -73,7 +77,7 @@ async def _generate(
             state.stop = f"free request budget spent ({state.requests} sent this run)"
             return None
         try:
-            slot = await state.pool.acquire(exclude=tried)
+            slot = await state.pool.acquire(exclude=tried, max_wait=MODEL_WAIT_S)
         except PoolExhausted:
             state.budget.refund()
             return None
@@ -83,6 +87,9 @@ async def _generate(
             summary = await _complete_and_parse(state, slot, messages)
         except TransportError as exc:
             state.pool.release(slot, False, exc.retry_after, disable=exc.permanent)
+            if not exc.billed:
+                state.budget.refund()
+                state.unbilled += 1
             if exc.permanent:
                 ctx.db.disable_model(slot.id, str(exc))
             ctx.db.log_llm_call(repo.full_name, state.provider, slot.id, f"error: {exc}"[:200], time.monotonic() - t0)
@@ -275,27 +282,33 @@ async def run_summarize(ctx: Ctx, provider: Provider = "openrouter", reserve: in
 
     t0 = time.monotonic()
     done = 0
+    in_flight = asyncio.Semaphore(JOBS_IN_FLIGHT if provider == "openrouter" else local.CONCURRENCY * 2)
+
+    async def check_quota() -> None:
+        quota = await read_quota(key)
+        if quota.balance_usd <= openrouter.MIN_BALANCE_USD:
+            state.stop = f"credit balance ${quota.balance_usd:.2f} ≤ ${openrouter.MIN_BALANCE_USD:.2f}"
+        elif provider == "openrouter":
+            budget.cap(quota.headroom(reserve))
+
     try:
         with Progress(console=ctx.console, transient=True) as prog:
             task = prog.add_task(f"summarize ({provider})", total=len(jobs))
-            while done < len(jobs) and state.stop is None:
-                quota = await read_quota(key)
-                if quota.balance_usd <= openrouter.MIN_BALANCE_USD:
-                    state.stop = f"credit balance ${quota.balance_usd:.2f} ≤ ${openrouter.MIN_BALANCE_USD:.2f}"
-                    break
-                if provider == "openrouter":
-                    budget.cap(quota.headroom(reserve))
-                    if budget.spent:
-                        state.stop = f"free headroom exhausted (remaining {quota.free_remaining}, sent {state.requests}, reserve {reserve})"
-                        break
-                batch = jobs[done : done + (BATCH_SIZE if provider == "openrouter" else local.CONCURRENCY * 2)]
 
-                async def one(job: Job) -> None:
+            # A sliding window, not batches: a job stuck waiting for a model holds back only itself.
+            async def one(job: Job) -> None:
+                nonlocal done
+                async with in_flight:
+                    if state.stop is not None:
+                        return
                     await summarize_repo(state, ctx, job)
+                    done += 1
                     prog.advance(task)
+                    if done % QUOTA_CHECK_EVERY == 0:
+                        await check_quota()
 
-                await asyncio.gather(*(one(j) for j in batch))
-                done += len(batch)
+            await check_quota()
+            await asyncio.gather(*(one(j) for j in jobs))
         quota_end = await read_quota(key)
     finally:
         await transport.aclose()
@@ -310,6 +323,7 @@ async def run_summarize(ctx: Ctx, provider: Provider = "openrouter", reserve: in
         "passed": state.passed,
         "failed": state.failed_repos,
         "requests": state.requests,
+        "requests_unbilled": state.unbilled,
         "free_requests_used": quota_end.free_used - quota_start.free_used,
         "free_remaining": quota_end.free_remaining,
         "balance_usd": quota_end.balance_usd,

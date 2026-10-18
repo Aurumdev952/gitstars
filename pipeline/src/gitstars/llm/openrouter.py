@@ -21,10 +21,13 @@ MIN_BALANCE_USD = 0.20
 class TransportError(RuntimeError):
     """A request failed in a way that should move the job to the next model."""
 
-    def __init__(self, message: str, retry_after: float | None = None, permanent: bool = False):
+    def __init__(self, message: str, retry_after: float | None = None, permanent: bool = False, billed: bool = True):
         super().__init__(message)
         self.retry_after = retry_after
         self.permanent = permanent
+        # Whether the request counted against the free daily quota. Measured: a 20-repo run sent 62 requests and
+        # /key counted 38, the gap matching its 429s and 5xx.
+        self.billed = billed
 
 
 class FatalProviderError(RuntimeError):
@@ -74,7 +77,7 @@ class ChatTransport:
         try:
             resp = await self.client.post(f"{self.base_url}/chat/completions", headers=self.headers, json=self.body(slot, messages, schema))
         except httpx.HTTPError as exc:
-            raise TransportError(f"{type(exc).__name__}") from exc
+            raise TransportError(f"{type(exc).__name__}", billed=False) from exc
         if resp.status_code in (401, 402):
             raise FatalProviderError(f"http {resp.status_code}: {resp.text[:200]}")
         if resp.status_code == 403:
@@ -83,9 +86,9 @@ class ChatTransport:
             moderated = any(w in resp.text.lower() for w in ("moderation", "flagged"))
             raise TransportError(f"http 403: {resp.text[:160]}", permanent=not moderated)
         if resp.status_code == 429:
-            raise TransportError("http 429", retry_after=_retry_after(resp))
+            raise TransportError("http 429", retry_after=_retry_after(resp), billed=False)
         if resp.status_code >= 400:
-            raise TransportError(f"http {resp.status_code}: {resp.text[:200]}")
+            raise TransportError(f"http {resp.status_code}: {resp.text[:200]}", billed=resp.status_code < 500)
         try:
             data = resp.json()
         except ValueError as exc:
@@ -93,7 +96,7 @@ class ChatTransport:
         if data.get("error"):
             err = data["error"]
             code = err.get("code") if isinstance(err, dict) else None
-            raise TransportError(f"provider error {code}: {str(err)[:200]}", retry_after=60.0 if code == 429 else None)
+            raise TransportError(f"provider error {code}: {str(err)[:200]}", retry_after=60.0 if code == 429 else None, billed=code != 429)
         choices = data.get("choices") or []
         content = (choices[0].get("message") or {}).get("content") if choices else None
         if not content:
