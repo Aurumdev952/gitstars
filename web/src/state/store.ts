@@ -4,6 +4,7 @@ import type { GalaxyIndex } from '#/lib/load'
 import { NO_FILTERS, applyFilters, filterColumns, type Filters, type FilterResult } from '#/lib/filters'
 import type { SearchHits } from '#/lib/search'
 import type { Device } from '#/workers/embedder'
+import type { QualitySetting, Tier } from '#/lib/quality'
 import { navigateSearch, searchFromFilters } from './url'
 
 export type View = '3d' | 'flat' | 'list'
@@ -15,11 +16,10 @@ export type View = '3d' | 'flat' | 'list'
 export type IntroPhase = 'spiral' | 'settling' | 'fade' | 'done'
 
 export type Settings = {
-  quality: 'low' | 'med' | 'high'
+  quality: QualitySetting
   motion: 'full' | 'reduced'
   autorotate: boolean
   labels: 'auto' | 'more' | 'none'
-  bloom: boolean
   ghosts: boolean
 }
 
@@ -70,6 +70,8 @@ export type GalaxyStore = UrlMirror & {
   discovered: number | null
   settings: Settings
   intro: IntroPhase
+  /** The tier the frame-rate monitor settled on; used when `settings.quality` is auto. */
+  autoTier: Tier
   timeline: TimelineState
   actions: {
     setGalaxy(g: GalaxyIndex): void
@@ -91,6 +93,7 @@ export type GalaxyStore = UrlMirror & {
     setCameraBusy(b: boolean): void
     setDragging(b: boolean): void
     setIntro(p: IntroPhase): void
+    setAutoTier(t: Tier): void
     setTimeline(p: Partial<TimelineState>): void
   }
 }
@@ -121,12 +124,12 @@ export const useGalaxyStore = create<GalaxyStore>()(
     lens: { state: 'off' },
     discovered: null,
     intro: 'done',
+    autoTier: 'high',
     settings: {
-      quality: 'high',
+      quality: 'auto',
       motion: prefersReducedMotion() ? 'reduced' : 'full',
       autorotate: true,
       labels: 'auto',
-      bloom: true,
       ghosts: true,
     },
     timeline: { open: false, playing: false, speed: 1 },
@@ -163,6 +166,9 @@ export const useGalaxyStore = create<GalaxyStore>()(
       setSettings: (p) => set({ settings: { ...get().settings, ...p } }),
       setCameraBusy: (cameraBusy) => set({ cameraBusy }),
       setDragging: (dragging) => set({ dragging }),
+      setAutoTier: (autoTier) => {
+        if (get().autoTier !== autoTier) set({ autoTier })
+      },
       setIntro: (intro) => {
         if (get().intro !== intro) set({ intro })
       },

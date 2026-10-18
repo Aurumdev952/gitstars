@@ -16,6 +16,7 @@ import { SceneTweens } from './SceneTweens'
 import { Nebulae } from './Nebulae'
 import { OverlayLayer } from './OverlayLayer'
 import { PointerPicker } from './PointerPicker'
+import { Quality } from './Quality'
 import { SceneDriver } from './SceneDriver'
 import { Stars } from './Stars'
 
@@ -51,6 +52,7 @@ export function GalaxyCanvas({ debug }: { debug: boolean }) {
       <Animator />
       <CameraRig />
       <PointerPicker />
+      <Quality />
       <Effects />
       <OverlayLayer>
         <Suspense fallback={null}>

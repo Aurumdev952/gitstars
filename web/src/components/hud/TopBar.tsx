@@ -202,6 +202,8 @@ function Chip({ children, onOpen, onClear, label }: { children: React.ReactNode;
   )
 }
 
+const TIER_LABEL = { low: 'low', med: 'medium', high: 'high' } as const
+
 const VIEWS: { id: View; label: string; icon: typeof Box; key: string }[] = [
   { id: '3d', label: '3D', icon: Box, key: 'f' },
   { id: 'flat', label: 'Flat', icon: MapIcon, key: 'f' },
@@ -249,6 +251,7 @@ function TopRight() {
 
 function SettingsButton() {
   const settings = useGalaxyStore((s) => s.settings)
+  const autoTier = useGalaxyStore((s) => s.autoTier)
   const open = useGalaxyStore((s) => s.overlay === 'settings')
   const { setSettings, setOverlay } = useGalaxyStore((s) => s.actions)
   const row = <K extends keyof Settings>(key: K, label: string, options: [Settings[K], string][]) => (
@@ -300,6 +303,23 @@ function SettingsButton() {
           ['more', 'More'],
           ['none', 'Off'],
         ])}
+        <div className="border-t border-glass-border pt-3">
+          {row('quality', 'Quality', [
+            ['auto', 'Auto'],
+            ['low', 'Low'],
+            ['med', 'Med'],
+            ['high', 'High'],
+          ])}
+          <p className="mt-1.5 text-[11.5px] leading-snug text-ink-faint">
+            {settings.quality === 'auto' ? (
+              <>
+                Adapts to your frame rate; now <span className="text-ink-muted">{TIER_LABEL[autoTier]}</span>.
+              </>
+            ) : (
+              'High adds lens aberration; Low drops bloom detail, grain and depth of field.'
+            )}
+          </p>
+        </div>
       </PopoverContent>
     </Popover>
   )

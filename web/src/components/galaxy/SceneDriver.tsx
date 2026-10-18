@@ -2,6 +2,7 @@ import { useEffect } from 'react'
 import { useFrame, useThree } from '@react-three/fiber'
 import type { PerspectiveCamera } from 'three'
 import { useGalaxyStore } from '#/state/store'
+import { TIERS, effectiveTier } from '#/lib/quality'
 import { sceneBus } from './sceneBus'
 
 const FROZEN_TIME = 12
@@ -57,7 +58,7 @@ export function SceneDriver() {
     u.uFocusDist.value = focus
     const zoomedIn = Math.min(1, Math.max(0, (0.75 - focus / home) / 0.4))
     // The intro starts close in; its burst would read as a screen of discs.
-    const settled = s.intro === 'done' ? 1 : 0
+    const settled = s.intro === 'done' && TIERS[effectiveTier(s.settings.quality, s.autoTier)].bokeh ? 1 : 0
     u.uBokeh.value = BOKEH * settled * zoomedIn * zoomedIn * (3 - 2 * zoomedIn)
     u.uPixelRatio.value = state.viewport.dpr
     u.uViewport.value.x = state.size.width * state.viewport.dpr
