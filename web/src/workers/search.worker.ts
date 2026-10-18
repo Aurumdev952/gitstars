@@ -63,7 +63,8 @@ function loadedModel(): Promise<Embedder> {
 
 async function embedQuery(text: string): Promise<Float32Array> {
   const e = await loadedModel()
-  const key = text.trim().toLowerCase()
+  // Keyed on the exact text: the model is case-sensitive, so "React" and "react" embed differently.
+  const key = text.trim()
   const hit = queryCache.get(key)
   if (hit) {
     queryCache.delete(key)
@@ -77,7 +78,8 @@ async function embedQuery(text: string): Promise<Float32Array> {
 }
 
 const api = {
-  async init(o: InitOptions): Promise<void> {
+  /** Builds the keyword index; keyword search works from here on, whatever happens to the vectors. */
+  init(o: InitOptions): void {
     opts = o
     const index = new MiniSearch<LexDoc>({
       fields: ['fullName', 'name', 'owner', 'text', 'tags', 'meta'],
@@ -91,7 +93,12 @@ const api = {
     })
     index.addAll(o.docs)
     lexIndex = index
-    vectors = await decodeVectors(o.vectorsUrl, o.n, o.dim)
+  },
+
+  /** Fetches the embedding matrix; safe to call again after a failure. */
+  async loadVectors(): Promise<void> {
+    if (!opts) throw new Error('search worker used before init')
+    vectors ??= await decodeVectors(opts.vectorsUrl, opts.n, opts.dim)
   },
 
   /** Idempotent: a second call joins the first load. */

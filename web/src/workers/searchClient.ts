@@ -6,7 +6,15 @@ import { useGalaxyStore } from '#/state/store'
 import type { ProbeResult, SearchApi } from './search.worker'
 import type { ModelProgress } from './embedder'
 
-type Session = { galaxy: GalaxyIndex; worker: Worker; api: Comlink.Remote<SearchApi>; ready: Promise<void> }
+type Session = {
+  galaxy: GalaxyIndex
+  worker: Worker
+  api: Comlink.Remote<SearchApi>
+  /** Keyword search is usable once this resolves. */
+  lexical: Promise<void>
+  /** Semantic search and the lens need these; retried by `vectorsReady` after a failure. */
+  vectors: Promise<void>
+}
 
 let session: Session | null = null
 let querySeq = 0
@@ -14,11 +22,14 @@ let lensSeq = 0
 
 function open(g: GalaxyIndex): Session {
   if (session?.galaxy === g) return session
+  const { model, actions } = useGalaxyStore.getState()
+  // A dataset swap keeps semantic search on if it was on, rather than silently dropping to keywords.
+  const rewarm = session !== null && (model.state === 'ready' || model.state === 'loading')
   session?.worker.terminate()
   const worker = new Worker(new URL('./search.worker.ts', import.meta.url), { type: 'module', name: 'search' })
   const api = Comlink.wrap<SearchApi>(worker)
   const { embedding, searchProbes } = g.data.meta
-  const ready = api.init({
+  const lexical = api.init({
     vectorsUrl: g.vectorsUrl,
     n: g.n,
     dim: embedding.dims,
@@ -27,11 +38,18 @@ function open(g: GalaxyIndex): Session {
     docs: buildLexDocs(g),
     probes: searchProbes,
   })
-  session = { galaxy: g, worker, api, ready }
-  const { setModel } = useGalaxyStore.getState().actions
-  setModel({ state: 'idle' })
-  ready.catch((err: unknown) => setModel({ state: 'error', message: `vectors failed to load: ${message(err)}` }))
-  return session
+  const sess: Session = { galaxy: g, worker, api, lexical, vectors: lexical.then(() => api.loadVectors()) }
+  session = sess
+  actions.setModel({ state: 'idle' })
+  sess.vectors.catch(() => {})
+  if (rewarm) queueMicrotask(warmModel)
+  return sess
+}
+
+/** The session's vectors, fetching them again if the last attempt failed. */
+function vectorsReady(sess: Session): Promise<void> {
+  sess.vectors = sess.vectors.catch(() => sess.api.loadVectors())
+  return sess.vectors
 }
 
 const message = (err: unknown) => (err instanceof Error ? err.message : String(err))
@@ -47,7 +65,8 @@ export function warmModel() {
     if (session !== sess) return
     setModel({ state: 'loading', progress: p.total > 0 ? p.loaded / p.total : 0, device: p.device })
   })
-  void sess.ready
+  void vectorsReady(sess)
+    .catch((err: unknown) => Promise.reject(new Error(`vectors failed to load: ${message(err)}`)))
     .then(() => sess.api.warm(onProgress))
     .then(({ device }) => session === sess && setModel({ state: 'ready', device }))
     .catch((err: unknown) => session === sess && setModel({ state: 'error', message: message(err) }))
@@ -58,11 +77,12 @@ async function runQuery(g: GalaxyIndex, query: string | null, modelReady: boolea
   const { setHits } = useGalaxyStore.getState().actions
   if (!query) return setHits(null)
   const sess = open(g)
-  await sess.ready
+  await sess.lexical
   const lexical = await sess.api.lexical(query, MAX_HITS)
   if (seq !== querySeq) return
   setHits(fuseHits(g, query, lexical.idx, null))
   if (!modelReady) return
+  await sess.vectors
   const semantic = await sess.api.semantic(query, MAX_HITS)
   if (seq !== querySeq) return
   setHits(fuseHits(g, query, lexical.idx, semantic.idx, { partialLexical: lexical.partial }))
@@ -78,7 +98,7 @@ async function runLens(g: GalaxyIndex, query: string | null) {
   if (model.state !== 'ready') return warmModel()
   try {
     const sess = open(g)
-    await sess.ready
+    await vectorsReady(sess)
     const scores = await sess.api.lens(query)
     if (seq === lensSeq) setLensState({ state: 'ready', query, weights: lensWeights(scores) })
   } catch (err) {
@@ -108,20 +128,12 @@ export function startSearchRunner(): () => void {
   }
 }
 
-export async function similarTo(i: number, k = 12) {
-  const g = useGalaxyStore.getState().galaxy
-  if (!g) return null
-  const sess = open(g)
-  await sess.ready
-  return sess.api.similarTo(i, k)
-}
-
 export async function probeSearch(): Promise<ProbeResult | null> {
   const g = useGalaxyStore.getState().galaxy
   if (!g) return null
   warmModel()
   const sess = open(g)
-  await sess.ready
+  await vectorsReady(sess)
   return sess.api.probe()
 }
 
@@ -130,7 +142,7 @@ export async function timeQuery(query: string) {
   const g = useGalaxyStore.getState().galaxy
   if (!g) return null
   const sess = open(g)
-  await sess.ready
+  await sess.lexical
   const t0 = performance.now()
   const lexical = await sess.api.lexical(query, MAX_HITS)
   const t1 = performance.now()
