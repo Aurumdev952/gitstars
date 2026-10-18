@@ -113,28 +113,38 @@ function Pending() {
 }
 
 function LoadFailed({ error }: { error: unknown }) {
-  const missing = error instanceof GalaxyLoadError && /returned 404/.test(error.message)
+  const text = error instanceof Error ? error.message : String(error)
+  const missing = error instanceof GalaxyLoadError && /returned 404/.test(text)
+  const path = missing ? text.replace(/ returned 404.*/, '') : null
   return (
     <main className="grid h-full place-items-center px-6">
-      <div className="glass max-w-md rounded-[var(--radius-panel)] p-6">
-        <h1 className="flex items-center gap-2 text-lg font-medium">
-          <StarMark className="size-4 text-starlight" />
-          {missing ? 'No galaxy exported yet' : 'The galaxy failed to load'}
+      <div role="alert" className="glass-strong w-[min(460px,100%)] rounded-[var(--radius-panel)] p-6">
+        <h1 className="flex items-center gap-2.5 text-[17px] font-medium tracking-[-0.01em] text-ink">
+          <StarMark className="size-4 text-starlight drop-shadow-[0_0_6px_oklch(0.86_0.12_85/0.7)]" />
+          {missing ? 'No galaxy here yet' : 'The galaxy failed to load'}
         </h1>
-        <p className="mt-2 text-sm leading-relaxed text-ink-muted">
+        <p className="mt-2.5 text-[13.5px] leading-relaxed text-ink-muted">
           {missing ? (
             <>
-              Run <code className="font-mono text-ink">gs export</code> to write{' '}
-              <code className="font-mono text-ink">public/data/galaxy.json</code>, or open the{' '}
-              <a className="text-starlight underline-offset-2 hover:underline" href="/?data=fixture">
-                synthetic fixture
-              </a>
-              .
+              There is no export at <code className="font-mono text-[12.5px] text-ink">public{path}</code>. Run{' '}
+              <code className="font-mono text-[12.5px] whitespace-nowrap text-ink">gs export</code> in the pipeline to write it, then reload.
             </>
           ) : (
-            String(error instanceof Error ? error.message : error)
+            text
           )}
         </p>
+        <div className="mt-5 flex items-center gap-2">
+          <button
+            type="button"
+            onClick={() => window.location.reload()}
+            className="rounded-full bg-starlight px-4 py-1.5 text-[13px] font-medium text-[oklch(0.2_0.03_85)] hover:brightness-110"
+          >
+            Reload
+          </button>
+          <a href="/?data=fixture" className="rounded-full px-4 py-1.5 text-[13px] text-ink-muted hover:bg-white/[0.06] hover:text-ink">
+            Open the synthetic fixture
+          </a>
+        </div>
       </div>
     </main>
   )

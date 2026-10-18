@@ -6,7 +6,7 @@ import { TIERS, effectiveTier } from '#/lib/quality'
 import { sceneBus } from './sceneBus'
 
 const FROZEN_TIME = 12
-const BOKEH = 0.5
+const BOKEH = 0.38
 
 const prev = { x: 0, y: 0, z: 0, set: false }
 

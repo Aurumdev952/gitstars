@@ -89,8 +89,8 @@ function TimelinePanel({ g }: { g: GalaxyIndex }) {
       )}
     >
       {!collapsed && (
-        <div aria-hidden className="pointer-events-none mb-2.5 text-center select-none [text-shadow:0_1px_14px_rgb(0_0_0/0.85)]">
-          <p className="tabular text-[30px] leading-none font-extralight tracking-[-0.02em] text-ink">
+        <div aria-hidden className="pointer-events-none mb-2.5 text-center select-none [text-shadow:0_0_2px_rgb(3_3_10/0.95),0_1px_14px_rgb(3_3_10/0.9),0_0_36px_rgb(3_3_10/0.8)]">
+          <p className="tabular text-[30px] leading-none font-light tracking-[-0.02em] text-ink">
             {date}
             <span className="text-ink-faint"> · </span>
             <span className="text-ink-muted">{formatCount(count)}</span>

@@ -42,7 +42,7 @@ function Wordmark({ dataName }: { dataName: string }) {
   const { counts } = g.data.meta
   const filtered = shown !== null && shown < g.n
   return (
-    <header ref={ref} className="pointer-events-none fixed top-0 left-0 z-10 px-6 pt-5 select-none">
+    <header ref={ref} className="pointer-events-none fixed top-0 left-0 z-10 px-6 pt-5 pb-3 select-none before:absolute before:-inset-x-10 before:-inset-y-8 before:-z-10 before:bg-[radial-gradient(closest-side,rgb(3_3_10/0.6),transparent)]">
       <h1 className="flex items-center gap-2.5 text-[19px] font-medium tracking-[-0.01em] text-ink [text-shadow:0_1px_12px_rgb(0_0_0/0.8)]">
         <StarMark className="size-[18px] text-starlight drop-shadow-[0_0_6px_oklch(0.86_0.12_85/0.7)]" />
         <motion.span
@@ -74,7 +74,7 @@ function Wordmark({ dataName }: { dataName: string }) {
           <span className="tabular font-medium text-ink-muted">{formatCount(counts.systems)}</span> systems
         </span>
       </p>
-      <p className="mt-0.5 pl-[28px] text-[11.5px] text-ink-faint [text-shadow:0_1px_8px_rgb(0_0_0/0.9)]">
+      <p className="mt-0.5 pl-[28px] text-[11.5px] text-ink-faint max-[1100px]:hidden [text-shadow:0_1px_8px_rgb(0_0_0/0.9)]">
         starred by <span className="text-ink-faint">{g.data.meta.viewer}</span>
       </p>
     </header>
@@ -87,6 +87,8 @@ function SearchCluster() {
   const lensQuery = useGalaxyStore((s) => s.lensQuery)
   const filters = useGalaxyStore((s) => s.filters)
   const view = useGalaxyStore((s) => s.view)
+  // The 420 px detail panel covers the right of a narrow window; the pill then centres in what is left.
+  const sidePanel = useGalaxyStore((s) => s.selected !== null || s.focusCluster !== null)
   const ref = useRef<HTMLDivElement>(null)
   useOccluder(ref)
   const facets = activeFacets(filters)
@@ -94,7 +96,11 @@ function SearchCluster() {
     <div
       ref={ref}
       style={{ '--hud-i': 0 } as CSSProperties}
-      className="hud-enter fixed top-4 left-1/2 z-20 flex w-[min(440px,calc(100vw-2rem))] -translate-x-1/2 flex-col items-center gap-2 max-[1100px]:top-[76px]">
+      className={cn(
+        'hud-enter fixed top-4 left-1/2 z-20 flex w-[min(440px,calc(100vw-2rem))] -translate-x-1/2 flex-col items-center gap-2 max-[1100px]:top-[76px]',
+        sidePanel && 'max-[1100px]:left-[calc((100vw-436px)/2)] max-[1100px]:w-[min(440px,calc(100vw-468px))]',
+      )}
+    >
       <div className="glass flex h-10 w-full items-center rounded-full text-[13.5px] text-ink-faint">
         <button
           type="button"
