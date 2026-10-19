@@ -13,6 +13,9 @@
     "test": "vitest run",
     "fixture": "bun scripts/make-fixture.ts",
     "models:fetch": "bun scripts/fetch-model.ts",
+    "tauri:prep": "bun scripts/fetch-uv.ts && bun scripts/vendor-ort.ts",
+    "tauri:dev": "bun run tauri:prep && tauri dev",
+    "tauri:build": "bun run tauri:prep && tauri build",
     "generate-routes": "tsr generate"
   },
   "dependencies": {
@@ -26,6 +29,9 @@
     "@tanstack/react-router": "1.170.45",
     "@tanstack/react-start": "1.169.3",
     "@tanstack/react-virtual": "3.14.21",
+    "@tauri-apps/api": "2.12.4",
+    "@tauri-apps/plugin-dialog": "2.8.3",
+    "@tauri-apps/plugin-opener": "2.7.2",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
     "cmdk": "1.1.1",
@@ -48,6 +54,7 @@
   },
   "devDependencies": {
     "@tanstack/router-cli": "^1.132.0",
+    "@tauri-apps/cli": "2.12.3",
     "@types/culori": "4.0.1",
     "@types/node": "^22.10.2",
     "@types/react": "^19.2.0",

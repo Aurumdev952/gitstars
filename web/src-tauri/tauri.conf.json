@@ -1,0 +1,60 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "gitstars",
+  "version": "0.1.0",
+  "identifier": "dev.gitstars.app",
+  "build": {
+    "devUrl": "http://localhost:3000",
+    "frontendDist": "../dist/client",
+    "beforeDevCommand": "bun run dev",
+    "beforeBuildCommand": "bun run build"
+  },
+  "app": {
+    "windows": [
+      {
+        "label": "main",
+        "title": "gitstars",
+        "width": 1440,
+        "height": 900,
+        "minWidth": 900,
+        "minHeight": 600,
+        "backgroundColor": "#07070f"
+      }
+    ],
+    "security": {
+      "csp": {
+        "default-src": "'self' gs: http://gs.localhost",
+        "script-src": "'self' 'wasm-unsafe-eval' blob: gs: http://gs.localhost",
+        "worker-src": "'self' blob:",
+        "style-src": "'self' 'unsafe-inline'",
+        "font-src": "'self' data:",
+        "img-src": "'self' data: blob:",
+        "connect-src": "'self' ipc: http://ipc.localhost gs: http://gs.localhost blob: data: https://api.github.com https://huggingface.co https://*.hf.co https://cdn.jsdelivr.net"
+      },
+      "devCsp": null,
+      "headers": {
+        "Cross-Origin-Opener-Policy": "same-origin",
+        "Cross-Origin-Embedder-Policy": "credentialless"
+      }
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": "all",
+    "category": "Utility",
+    "shortDescription": "A 3D map of everything you have starred on GitHub",
+    "icon": ["icons/32x32.png", "icons/128x128.png", "icons/128x128@2x.png", "icons/icon.icns", "icons/icon.ico"],
+    "externalBin": ["binaries/uv"],
+    "resources": {
+      "../../pipeline/pyproject.toml": "pipeline/pyproject.toml",
+      "../../pipeline/uv.lock": "pipeline/uv.lock",
+      "../../pipeline/README.md": "pipeline/README.md",
+      "../../pipeline/src/gitstars/*.py": "pipeline/src/gitstars",
+      "../../pipeline/src/gitstars/llm/*.py": "pipeline/src/gitstars/llm",
+      "../../contract/galaxy.schema.json": "contract/galaxy.schema.json",
+      "../public/data/galaxy.json": "data/galaxy.json",
+      "../public/data/vectors.f16.bin": "data/vectors.f16.bin",
+      "resources/models/ort/*": "models/ort"
+    }
+  }
+}
