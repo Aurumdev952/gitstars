@@ -91,4 +91,11 @@ describe('resolveDataSource', () => {
     expect(resolveDataSource('fixture').galaxyUrl).toBe('/data/fixture/galaxy.json')
     expect(resolveDataSource('../secrets').galaxyUrl).toBe('/data/galaxy.json')
   })
+
+  it('builds URLs on the desktop protocol', () => {
+    expect(resolveDataSource(undefined, 'gs://localhost/')).toMatchObject({
+      galaxyUrl: 'gs://localhost/data/galaxy.json',
+      vectorsUrl: 'gs://localhost/data/vectors.f16.bin',
+    })
+  })
 })

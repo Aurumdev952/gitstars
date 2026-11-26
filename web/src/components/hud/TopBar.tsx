@@ -1,4 +1,4 @@
-import { useRef, useState, type CSSProperties } from 'react'
+import { lazy, Suspense, useRef, useState, type CSSProperties } from 'react'
 import { motion } from 'motion/react'
 import { Box, List, Map as MapIcon, Search, Settings2, Sparkles, X } from 'lucide-react'
 import { useGalaxyStore, type Settings, type View } from '#/state/store'
@@ -11,6 +11,10 @@ import { Kbd } from '#/components/ui/kbd'
 import { Popover, PopoverContent, PopoverTrigger } from '#/components/ui/popover'
 import { FilterButton } from './FilterPopover'
 import { useOccluder } from './useOccluder'
+import { isTauri } from '#/lib/platform'
+
+// The desktop app's pipeline controls; the web build never loads them or the Tauri API.
+const PipelinePanel = lazy(() => import('./PipelinePanel'))
 
 export function StarMark({ className = '' }: { className?: string }) {
   return (
@@ -250,6 +254,11 @@ function TopRight() {
         ))}
       </div>
       <FilterButton />
+      {isTauri && (
+        <Suspense fallback={null}>
+          <PipelinePanel />
+        </Suspense>
+      )}
       <SettingsButton />
     </div>
   )

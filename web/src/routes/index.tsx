@@ -9,6 +9,7 @@ import { startSearchRunner, warmModel } from '#/workers/searchClient'
 import { seedDiscovery } from '#/state/commands'
 import { introMode, isDeepLink } from '#/lib/intro'
 import { timeline } from '#/state/timeline'
+import { isTauri } from '#/lib/platform'
 
 // three, R3F and the post chain load in their own chunk, in parallel with galaxy.json.
 const GalaxyCanvas = lazy(() => import('#/components/galaxy/GalaxyCanvas'))
@@ -60,10 +61,11 @@ function Home() {
 
   useEffect(() => {
     const stop = startSearchRunner()
-    // The model is a few hundred MB; fetch it once the first frames are on screen.
-    const idle = requestIdleCallback(() => warmModel(), { timeout: 4000 })
+    // The model is a few hundred MB; fetch it once the first frames are on screen. The desktop app
+    // downloads it only once search is used.
+    const cancelIdle = whenIdle(() => warmModel({ download: !isTauri }))
     return () => {
-      cancelIdleCallback(idle)
+      cancelIdle()
       stop()
     }
   }, [])
@@ -96,6 +98,16 @@ function Home() {
       <Hud dataName={dataName} />
     </main>
   )
+}
+
+/** WebKit (Safari, and the desktop app's webview on Linux and macOS) has no requestIdleCallback. */
+function whenIdle(fn: () => void): () => void {
+  if (typeof requestIdleCallback === 'function') {
+    const id = requestIdleCallback(fn, { timeout: 4000 })
+    return () => cancelIdleCallback(id)
+  }
+  const id = setTimeout(fn, 1500)
+  return () => clearTimeout(id)
 }
 
 function Pending() {

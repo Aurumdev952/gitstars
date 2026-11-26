@@ -1,3 +1,5 @@
+import { rmSync } from 'node:fs'
+import { join } from 'node:path'
 import { defineConfig, type Plugin } from 'vite'
 import { tanstackStart } from '@tanstack/react-start/plugin/vite'
 import viteReact from '@vitejs/plugin-react'
@@ -20,6 +22,22 @@ function crossOriginIsolation(): Plugin {
     })
   }
   return { name: 'gitstars:cross-origin-isolation', configureServer: use, configurePreviewServer: use }
+}
+
+/**
+ * The desktop app embeds `dist/client` in its binary and serves `data/` and `models/` through its
+ * `gs` protocol instead (bundled resources and the app data dir), so a Tauri build drops the
+ * copies `public/` put there: the vendored model alone is about 900 MB.
+ */
+function desktopAssets(): Plugin {
+  return {
+    name: 'gitstars:desktop-assets',
+    apply: () => Boolean(process.env.TAURI_ENV_PLATFORM),
+    writeBundle(options) {
+      if (this.environment.name !== 'client' || !options.dir) return
+      for (const dir of ['data', 'models']) rmSync(join(options.dir, dir), { recursive: true, force: true })
+    },
+  }
 }
 
 export default defineConfig({
@@ -47,5 +65,5 @@ export default defineConfig({
     // three.module alone minifies to about 700 kB; it is one cached, lazily loaded chunk.
     chunkSizeWarningLimit: 760,
   },
-  plugins: [crossOriginIsolation(), tailwindcss(), tanstackStart({ spa: { enabled: true } }), viteReact()],
+  plugins: [crossOriginIsolation(), desktopAssets(), tailwindcss(), tanstackStart({ spa: { enabled: true, prerender: { outputPath: '/index.html' } } }), viteReact()],
 })

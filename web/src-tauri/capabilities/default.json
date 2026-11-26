@@ -1,0 +1,7 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "default",
+  "description": "The main window: events for pipeline logs and model progress, the folder picker for imports, and opening repo links in the browser.",
+  "windows": ["main"],
+  "permissions": ["core:default", "dialog:allow-open", "opener:allow-open-url"]
+}

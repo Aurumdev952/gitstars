@@ -115,6 +115,12 @@ def layout(force: Force = False) -> None:
 
 
 @app.command()
+def place(force: Force = False) -> None:
+    """Add new stars to the stored layout beside their nearest neighbours; drop unstarred ones. No UMAP, no GPU."""
+    _run("place", None, force)
+
+
+@app.command()
 def reassign(
     limit: Limit = None,
     force: Force = False,
@@ -138,18 +144,27 @@ def export(force: Force = False) -> None:
     _run("export", None, force)
 
 
+INCREMENTAL = ("fetch", "homepage", "card", "gate", "summarize", "embed", "place", "export")
+FULL = tuple(name for name in STAGES if name != "place")
+
+
 @app.command()
 def run(
     limit: Limit = None,
     provider: ProviderOpt = "openrouter",
     llm: Annotated[bool, typer.Option("--llm/--no-llm", help="Include gate, summarize and name.")] = True,
+    incremental: Annotated[
+        bool, typer.Option("--incremental", help="Place new stars into the stored layout instead of rebuilding it.")
+    ] = False,
 ) -> None:
-    """Every stage in order. `--no-llm` builds the v0 map."""
+    """Every stage in order. `--no-llm` builds the v0 map; `--incremental` keeps the map and adds new stars to it."""
     for stage in STAGES.values():
         if stage.uses_llm and not llm:
             continue
+        if stage.name not in (INCREMENTAL if incremental else FULL):
+            continue
         kwargs: dict[str, Any] = {"provider": _provider(provider)} if stage.name in ("summarize", "name") else {}
-        _run(stage.name, None if stage.name in ("layout", "export") else limit, False, **kwargs)
+        _run(stage.name, None if stage.name in ("layout", "place", "export") else limit, False, **kwargs)
 
 
 @app.command()
@@ -256,12 +271,10 @@ def misfits(
     _print_result("misfits", result, time.monotonic() - t0)
 
 
-@app.command()
-def status() -> None:
-    """Progress per stage, fetch stats, OpenRouter quota left."""
-    ctx = _ctx()
+def status_data(ctx: Ctx) -> dict[str, Any]:
+    """Everything `gs status` reports, as plain data."""
     repos = ctx.db.repos()
-    t = Table("stage", "version", "fresh", "of", title=f"data: {ctx.paths.data}", title_justify="left")
+    stages: dict[str, dict[str, Any]] = {}
     fresh = {"fetch": 0, "card": 0, "gate": 0, "summarize": 0}
     for r in repos:
         fresh["fetch"] += ctx.db.get_artifact("tree", commit_key(r, STAGES["fetch"].version)) is not None
@@ -273,41 +286,95 @@ def status() -> None:
         job = job_for(ctx.db, r)
         fresh["summarize"] += job is not None and ctx.db.get_artifact("summary", job.key) is not None
     for stage, n in fresh.items():
-        t.add_row(stage, str(STAGES[stage].version), str(n), str(len(repos)))
+        stages[stage] = {"version": STAGES[stage].version, "fresh": n, "of": len(repos)}
     ef = embed_freshness(ctx)
+    stages["embed"] = {"version": STAGES["embed"].version, "fresh": ef["fresh_summary"] + ef["fresh_card"], "of": len(repos), **ef}
+    n_hp = ctx.db.conn.execute("SELECT COUNT(*), SUM(json_extract(payload,'$.doc') IS NOT NULL) FROM homepages").fetchone()
+    stages["homepage"] = {"version": STAGES["homepage"].version, "ok": n_hp[1] or 0, "urls": n_hp[0]}
+    lay = ctx.db.get_global("layout")
+    stages["layout"] = {
+        "version": STAGES["layout"].version,
+        "present": bool(lay),
+        "repos": len(lay["names"]) if lay else 0,
+        "systems": len(set(lay["system"])) if lay else 0,
+        "galaxies": len(set(lay["galaxy"])) if lay else 0,
+        "placed": lay.get("placed") if lay else None,
+    }
+    exp = ctx.db.get_global("export")
+    stages["export"] = {"version": STAGES["export"].version, "at": exp["at"] if exp else None, "counts": exp["counts"] if exp else None}
+    calls = ctx.db.conn.execute("SELECT provider, SUM(outcome='ok'), COUNT(*) FROM llm_calls GROUP BY provider").fetchall()
+    dec = ctx.db.conn.execute(
+        "SELECT purpose, COUNT(*), SUM(error IS NULL), SUM(json_extract(response,'$.usage.cost')) FROM decisions GROUP BY purpose"
+    ).fetchall()
+    try:
+        q = asyncio.run(read_quota(openrouter_key()))
+        quota: dict[str, Any] = {
+            "free_remaining": q.free_remaining,
+            "free_limit": q.free_limit,
+            "free_used": q.free_used,
+            "balance_usd": q.balance_usd,
+        }
+    except Exception as exc:  # status must still report when the key service or network is down
+        quota = {"error": type(exc).__name__}
+    return {
+        "data": str(ctx.paths.data),
+        "repos": len(repos),
+        "newest_starred_at": max((r.starred_at for r in repos), default=None),
+        "stages": stages,
+        "fetch": ctx.db.get_global("fetch"),
+        "disabled_models": {m: v["reason"] for m, v in sorted((ctx.db.get_global("disabled_models") or {}).items())},
+        "llm_calls": {prov: {"ok": ok, "total": total} for prov, ok, total in calls},
+        "decider": {purpose: {"ok": ok, "total": n, "cost": cost or 0} for purpose, n, ok, cost in dec},
+        "openrouter": quota,
+    }
+
+
+@app.command()
+def status(as_json: Annotated[bool, typer.Option("--json", help="Print machine-readable JSON instead.")] = False) -> None:
+    """Progress per stage, fetch stats, OpenRouter quota left."""
+    ctx = _ctx()
+    try:
+        st = status_data(ctx)
+    finally:
+        ctx.db.close()
+    if as_json:
+        typer.echo(json.dumps(st))
+        return
+    stages = st["stages"]
+    t = Table("stage", "version", "fresh", "of", title=f"data: {st['data']}", title_justify="left")
+    for stage in ("fetch", "card", "gate", "summarize"):
+        t.add_row(stage, str(stages[stage]["version"]), str(stages[stage]["fresh"]), str(stages[stage]["of"]))
+    ef = stages["embed"]
     t.add_row(
         "embed",
-        str(STAGES["embed"].version),
-        f"{ef['fresh_summary'] + ef['fresh_card']} ({ef['fresh_summary']} from summary, {ef['fresh_card']} from card)",
-        f"{len(repos)} · {ef['stale']} stale · {ef['missing']} missing",
+        str(ef["version"]),
+        f"{ef['fresh']} ({ef['fresh_summary']} from summary, {ef['fresh_card']} from card)",
+        f"{ef['of']} · {ef['stale']} stale · {ef['missing']} missing",
     )
-    n_hp = ctx.db.conn.execute("SELECT COUNT(*), SUM(json_extract(payload,'$.doc') IS NOT NULL) FROM homepages").fetchone()
-    t.add_row("homepage", str(STAGES["homepage"].version), f"{n_hp[1] or 0} ok", f"{n_hp[0]} urls")
-    lay = ctx.db.get_global("layout")
-    t.add_row("layout", str(STAGES["layout"].version), "yes" if lay else "no", f"{len(set(lay['system'])) if lay else 0} systems")
-    exp = ctx.db.get_global("export")
-    t.add_row("export", "1", exp["at"] if exp else "never", json.dumps(exp["counts"]) if exp else "")
+    hp = stages["homepage"]
+    t.add_row("homepage", str(hp["version"]), f"{hp['ok']} ok", f"{hp['urls']} urls")
+    lay = stages["layout"]
+    t.add_row("layout", str(lay["version"]), "yes" if lay["present"] else "no", f"{lay['systems']} systems")
+    exp = stages["export"]
+    t.add_row("export", str(exp["version"]), exp["at"] or "never", json.dumps(exp["counts"]) if exp["counts"] else "")
     console.print(t)
-    fs = ctx.db.get_global("fetch")
+    fs = st["fetch"]
     if fs:
         console.print(
             f"fetch: viewer {fs['viewer']} · starred {fs['total_starred']} · own dropped {fs['own_dropped']} · kept {fs['kept']}"
             f" · with README {fs['with_readme']} · with homepage {fs['with_homepage']}"
         )
-    for model, v in sorted((ctx.db.get_global("disabled_models") or {}).items()):
-        console.print(Text(f"disabled model: {model} ({v['reason'][:80]})"))
-    calls = ctx.db.conn.execute("SELECT provider, SUM(outcome='ok'), COUNT(*) FROM llm_calls GROUP BY provider").fetchall()
-    for prov, ok, total in calls:
-        console.print(f"llm calls ({prov}): {ok} ok / {total} total")
-    dec = ctx.db.conn.execute(
-        "SELECT purpose, COUNT(*), SUM(error IS NULL), SUM(json_extract(response,'$.usage.cost')) FROM decisions GROUP BY purpose"
-    ).fetchall()
-    for purpose, n, ok, cost in dec:
-        console.print(f"decider {purpose}: {ok}/{n} ok, ${cost or 0:.5f}")
-    try:
-        q = asyncio.run(read_quota(openrouter_key()))
+    for model, reason in st["disabled_models"].items():
+        console.print(Text(f"disabled model: {model} ({reason[:80]})"))
+    for prov, c in st["llm_calls"].items():
+        console.print(f"llm calls ({prov}): {c['ok']} ok / {c['total']} total")
+    for purpose, d in st["decider"].items():
+        console.print(f"decider {purpose}: {d['ok']}/{d['total']} ok, ${d['cost']:.5f}")
+    q = st["openrouter"]
+    if "error" in q:
+        console.print(f"openrouter quota: unavailable ({q['error']})")
+    else:
         console.print(
-            f"openrouter: free {q.free_remaining}/{q.free_limit} remaining today (used {q.free_used}) · balance ${q.balance_usd:.4f}"
+            f"openrouter: free {q['free_remaining']}/{q['free_limit']} remaining today (used {q['free_used']})"
+            f" · balance ${q['balance_usd']:.4f}"
         )
-    except Exception as exc:  # status must still print when the key service or network is down
-        console.print(f"openrouter quota: unavailable ({type(exc).__name__})")

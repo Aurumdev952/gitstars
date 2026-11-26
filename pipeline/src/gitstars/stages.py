@@ -1,4 +1,5 @@
-"""Stage registry: name → version → runner, in pipeline order. `gs run` walks it; each CLI command looks one up."""
+"""Stage registry: name → version → runner, in pipeline order. `gs run` walks it (skipping `place`, which only
+`--incremental` runs in place of layout, reassign and name); each CLI command looks one up."""
 
 from __future__ import annotations
 
@@ -8,7 +9,7 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any
 
-from gitstars import cards, embed, export, layout, naming, reassign, summarize
+from gitstars import cards, embed, export, layout, naming, place, reassign, summarize
 from gitstars.context import Ctx
 
 
@@ -40,6 +41,7 @@ STAGES: dict[str, Stage] = {
             uses_llm=True,
         ),
         Stage("embed", embed.EMBED_VERSION, embed.run_embed, "EmbeddingGemma 2 vectors (summary, or v0 card)."),
+        Stage("place", place.PLACE_VERSION, place.run_place, "Add new stars to the stored layout; drop unstarred ones."),
         Stage("layout", layout.LAYOUT_VERSION, layout.run_layout, "Systems, galaxies, 3-d/2-d positions, neighbours."),
         Stage("reassign", reassign.REASSIGN_VERSION, reassign.run_reassign, "pplx-decider moves misplaced repos.", uses_llm=True),
         Stage("name", naming.NAME_VERSION, naming.run_name, "LLM names for systems (c-TF-IDF names otherwise).", uses_llm=True),

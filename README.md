@@ -112,11 +112,51 @@ Without an export the app explains how to make one. `?data=fixture` loads a bund
 sample. A static host needs the same headers the dev server sets, `Cross-Origin-Opener-Policy:
 same-origin` and `Cross-Origin-Embedder-Policy: credentialless`, for in-browser search.
 
+## Desktop app
+
+`web/src-tauri/` wraps the app in [Tauri 2](https://tauri.app). The desktop app shows the galaxy
+and runs the pipeline itself, so the machine needs no Python, uv or GitHub CLI. It bundles the
+pipeline source, the contract, the current export and a pinned `uv`, and on first use `uv` installs
+Python 3.12 and the locked dependencies into the app's data folder.
+
+```bash
+cd web
+bun install
+bun run tauri:dev      # downloads uv into src-tauri/binaries/ and copies ORT's wasm, then opens the app
+bun run tauri:build    # .deb, .rpm and AppImage on Linux; .dmg on macOS; an NSIS installer on Windows
+```
+
+Building needs Rust, the [Tauri prerequisites](https://tauri.app/start/prerequisites/) for your OS
+(WebKitGTK 4.1 on Linux), and an export in `web/public/data/`, which the app ships as its starting
+galaxy.
+
+- **Where data lives.** Everything the app writes goes in one folder: `~/.local/share/dev.gitstars.app/`
+  on Linux, `~/Library/Application Support/dev.gitstars.app/` on macOS and
+  `%APPDATA%\dev.gitstars.app\` on Windows. It holds `data/gitstars.db`, `export/` (which the app
+  shows ahead of the bundled export), `export.prev/` and `backups/` (the last 3 databases) for
+  rollback, `models/` for the search model, and `venv/` and `uv/` for the pipeline runtime. The
+  GitHub token and OpenRouter key go in the OS keychain.
+- **Importing an existing checkout.** In the Pipeline panel (the orbit button at the top right),
+  "Import existing data" asks for the folder holding `gitstars.db`. It defaults to `GITSTARS_DATA`,
+  or to this repo's `data/` in a dev build. The app copies the database with SQLite's online backup
+  and copies the export from the checkout's `web/public/data/`. It only reads the source.
+- **New stars.** On launch, with a database and a GitHub token, the app compares your 20 newest stars
+  with the database. "Add to galaxy" runs `gs run --incremental`, which keeps every existing star
+  where it is and places the new ones beside their neighbours. "Rebuild galaxy" runs
+  `layout → name → reassign → name → export`. Both snapshot the database and export first, and
+  "Restore previous" puts that snapshot back.
+- **Search model.** The app downloads the model (about 890 MB) the first time you search, and keeps
+  it in `models/`.
+- **GPU.** Embedding needs an NVIDIA GPU with a CUDA 13 driver, as it does on the command line. Without
+  one the app turns the pipeline off; the galaxy and search still work. The first install downloads
+  several GB (PyTorch with CUDA). The app runs only the OpenRouter provider, not the local vLLM one.
+
 ## Tests
 
 ```bash
 cd pipeline && uv run pytest
 cd web && bun run test && bun run typecheck && bun run build
+cd web/src-tauri && cargo test
 ```
 
 ## Repository layout
@@ -125,6 +165,7 @@ cd web && bun run test && bun run typecheck && bun run build
 |---|---|
 | `pipeline/` | The Python pipeline and the `gs` CLI |
 | `web/` | The TanStack Start app, React Three Fiber scene, shaders and search worker |
+| `web/src-tauri/` | The Tauri desktop shell: the `gs://` protocol, pipeline runner, import and snapshots |
 | `infra/vllm/` | Docker Compose config and smoke test for local Gemma 4 |
 | `contract/` | The JSON Schema for the export |
 | `docs/` | The UI design spec and implementation notes for the web app |

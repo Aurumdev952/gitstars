@@ -4,6 +4,7 @@ import type { LayoutAttributes } from './layout'
 import { introDelay } from './intro'
 import { toStarredRange } from './timeline'
 import { densityPeak, type Vec3 } from './labelLayout'
+import { assetBase } from './platform'
 
 export type ClusterNode = Cluster & {
   /** Position in `galaxies` or `systems`. */
@@ -64,11 +65,11 @@ export type GalaxyIndex = {
 
 export type DataSource = { name: string; galaxyUrl: string; vectorsUrl: string }
 
-export function resolveDataSource(name: string | undefined): DataSource {
+export function resolveDataSource(name: string | undefined, base = assetBase()): DataSource {
   if (name && /^[a-z0-9-]+$/i.test(name)) {
-    return { name, galaxyUrl: `/data/${name}/galaxy.json`, vectorsUrl: `/data/${name}/vectors.f16.bin` }
+    return { name, galaxyUrl: `${base}data/${name}/galaxy.json`, vectorsUrl: `${base}data/${name}/vectors.f16.bin` }
   }
-  return { name: 'galaxy', galaxyUrl: '/data/galaxy.json', vectorsUrl: '/data/vectors.f16.bin' }
+  return { name: 'galaxy', galaxyUrl: `${base}data/galaxy.json`, vectorsUrl: `${base}data/vectors.f16.bin` }
 }
 
 export class GalaxyLoadError extends Error {}

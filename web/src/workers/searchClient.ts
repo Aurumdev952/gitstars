@@ -4,7 +4,8 @@ import { buildLexDocs, fuseHits, MAX_HITS, semanticAbove } from '#/lib/search'
 import { lensWeights } from '#/lib/lens'
 import { useGalaxyStore } from '#/state/store'
 import type { ProbeResult, SearchApi } from './search.worker'
-import type { ModelProgress } from './embedder'
+import { modelFiles, type ModelProgress } from './embedder'
+import { assetBase, isTauri } from '#/lib/platform'
 
 type Session = {
   galaxy: GalaxyIndex
@@ -31,6 +32,7 @@ function open(g: GalaxyIndex): Session {
   const { embedding, searchProbes } = g.data.meta
   const lexical = api.init({
     vectorsUrl: g.vectorsUrl,
+    assetBase: assetBase(),
     n: g.n,
     dim: embedding.dims,
     model: embedding.browserModel,
@@ -42,7 +44,7 @@ function open(g: GalaxyIndex): Session {
   session = sess
   actions.setModel({ state: 'idle' })
   sess.vectors.catch(() => {})
-  if (rewarm) queueMicrotask(warmModel)
+  if (rewarm) queueMicrotask(() => warmModel())
   return sess
 }
 
@@ -54,8 +56,12 @@ function vectorsReady(sess: Session): Promise<void> {
 
 const message = (err: unknown) => (err instanceof Error ? err.message : String(err))
 
-/** Starts the model download once; later calls are no-ops while it loads or after it is ready. */
-export function warmModel() {
+/**
+ * Starts the model download once; later calls are no-ops while it loads or after it is ready.
+ * `download: false` only loads a model the desktop app already has, so launching the app does not
+ * start a download of several hundred MB before search is used.
+ */
+export function warmModel({ download = true }: { download?: boolean } = {}) {
   const s = useGalaxyStore.getState()
   if (!s.galaxy || s.model.state === 'loading' || s.model.state === 'ready') return
   const sess = open(s.galaxy)
@@ -67,9 +73,22 @@ export function warmModel() {
   })
   void vectorsReady(sess)
     .catch((err: unknown) => Promise.reject(new Error(`vectors failed to load: ${message(err)}`)))
-    .then(() => sess.api.warm(onProgress))
-    .then(({ device }) => session === sess && setModel({ state: 'ready', device }))
+    .then(() => desktopModel(sess, download))
+    .then((present) => {
+      if (!present) return session === sess && setModel({ state: 'idle' })
+      return sess.api.warm(onProgress).then(({ device }) => session === sess && setModel({ state: 'ready', device }))
+    })
     .catch((err: unknown) => session === sess && setModel({ state: 'error', message: message(err) }))
+}
+
+/** The desktop app downloads the model into its data dir first; the web loads it from the Hub. */
+async function desktopModel(sess: Session, download: boolean): Promise<boolean> {
+  if (!isTauri) return true
+  const { ensureModel } = await import('#/lib/desktop')
+  const { setModel } = useGalaxyStore.getState().actions
+  return ensureModel(sess.galaxy.data.meta.embedding.browserModel, modelFiles(), download, (loaded, total) => {
+    if (session === sess) setModel({ state: 'loading', progress: total > 0 ? loaded / total : 0, device: null })
+  })
 }
 
 async function runQuery(g: GalaxyIndex, query: string | null, modelReady: boolean) {

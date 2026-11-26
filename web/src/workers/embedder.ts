@@ -9,6 +9,18 @@ export const DTYPE = { webgpu: 'q8', wasm: 'fp16' } as const
 /** Where `bun run models:fetch` puts the model and ORT's wasm, relative to `public/` and the base URL. */
 export const VENDORED = { models: 'models/', ort: 'models/ort/' } as const
 
+/** The file-name suffix transformers.js gives each dtype's ONNX export. */
+const DTYPE_SUFFIX = { q8: '_quantized', fp16: '_fp16' } as const satisfies Record<(typeof DTYPE)[Device], string>
+
+/**
+ * The files `bun run models:fetch` resolves for the text tower, without the `*.onnx_data` external
+ * data each ONNX file names, which the downloader adds from the Hub listing.
+ */
+export function modelFiles(): string[] {
+  const onnx = [...new Set(Object.values(DTYPE))].map((d) => `onnx/model${DTYPE_SUFFIX[d]}.onnx`)
+  return ['config.json', 'tokenizer.json', 'tokenizer_config.json', ...onnx]
+}
+
 /** The two ORT-web builds transformers.js picks between: asyncify, or plain on Safari < 26 without WebGPU. */
 export const ORT_RUNTIMES = ['ort-wasm-simd-threaded.asyncify', 'ort-wasm-simd-threaded'] as const
 
@@ -32,9 +44,14 @@ export type Embedder = {
  * (about 535 MB at q8) that text search never uses, so this goes through AutoModel with those
  * configs removed and reads its pooled `sentence_embedding` output.
  */
-export async function loadEmbedder(model: string, dim: number, onProgress: (p: ModelProgress) => void): Promise<Embedder> {
+export async function loadEmbedder(
+  model: string,
+  dim: number,
+  assetBase: string,
+  onProgress: (p: ModelProgress) => void,
+): Promise<Embedder> {
   const tf = await import('@huggingface/transformers')
-  await preferVendored(tf, model)
+  await preferVendored(tf, model, assetBase)
   const gpu = (globalThis.navigator as Navigator & { gpu?: { requestAdapter(): Promise<unknown> } }).gpu
   const adapter = gpu ? await gpu.requestAdapter().catch(() => null) : null
   const devices: Device[] = adapter ? ['webgpu', 'wasm'] : ['wasm']
@@ -74,12 +91,15 @@ export async function loadEmbedder(model: string, dim: number, onProgress: (p: M
   throw lastError instanceof Error ? lastError : new Error(String(lastError))
 }
 
+const STAND_IN = 'https://vendored.invalid/'
+
 /**
- * Points transformers.js and ORT at `public/models/` when the model is vendored there, so nothing
- * goes to the Hub or the jsDelivr CDN; otherwise leaves the remote defaults alone.
+ * Points transformers.js and ORT at `models/` under `assetBase` (`public/` on the web, the app data
+ * dir on the desktop) when the model is vendored there, so nothing goes to the Hub or the jsDelivr
+ * CDN; otherwise leaves the remote defaults alone.
  */
-async function preferVendored(tf: typeof import('@huggingface/transformers'), model: string): Promise<void> {
-  const base = new URL(import.meta.env.BASE_URL, globalThis.location.href)
+async function preferVendored(tf: typeof import('@huggingface/transformers'), model: string, assetBase: string): Promise<void> {
+  const base = new URL(assetBase, globalThis.location.href)
   // fetch-model.ts writes config.json last, so a readable one means every file is complete. Parsing
   // it rules out an SPA fallback that answers any path with index.html.
   const res = await fetch(new URL(`${VENDORED.models}${model}/config.json`, base)).catch(() => null)
@@ -93,6 +113,15 @@ async function preferVendored(tf: typeof import('@huggingface/transformers'), mo
   tf.env.allowRemoteModels = true
   tf.env.remoteHost = new URL(VENDORED.models, base).href
   tf.env.remotePathTemplate = '{model}/'
+  // transformers.js treats only http(s) hosts as remote: on the desktop app's gs:// it skips the
+  // size probes and decides there is no tokenizer. It sees a stand-in https origin instead, and
+  // its fetch maps that back. The files are already on disk, so they skip the browser cache too.
+  if (!/^https?:$/.test(base.protocol)) {
+    const fetchVia = tf.env.fetch
+    tf.env.useBrowserCache = false
+    tf.env.remoteHost = new URL(VENDORED.models, STAND_IN).href
+    tf.env.fetch = (input, init) => fetchVia(String(input).replace(STAND_IN, base.href), init)
+  }
   const paths = tf.env.backends.onnx.wasm?.wasmPaths
   // transformers.js has already chosen its build and set CDN URLs; keep the file names, swap the host.
   if (paths && typeof paths === 'object') {

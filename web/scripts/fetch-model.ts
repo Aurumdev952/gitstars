@@ -2,12 +2,12 @@
 // Vendors the browser embedding model and ORT's wasm into public/models/ so search runs offline.
 // bun scripts/fetch-model.ts [model-id]
 import { copyFileSync, createWriteStream, existsSync, mkdirSync, readFileSync, renameSync, rmSync, statSync } from 'node:fs'
-import { createRequire } from 'node:module'
 import { homedir } from 'node:os'
 import { basename, dirname, join } from 'node:path'
 import { once } from 'node:events'
 import { AutoConfig, ModelRegistry } from '@huggingface/transformers'
-import { DTYPE, ORT_RUNTIMES, VENDORED, textOnly, type Device } from '../src/workers/embedder'
+import { DTYPE, VENDORED, textOnly, type Device } from '../src/workers/embedder'
+import { vendorOrt } from './vendor-ort'
 
 const model = process.argv[2] ?? 'onnx-community/embeddinggemma-2-ONNX'
 const publicDir = join(import.meta.dirname, '..', 'public')
@@ -75,18 +75,7 @@ async function vendor(file: string, sizes: Map<string, number>, snapshot: string
   report.push({ file, bytes: size, how: 'downloaded' })
 }
 
-mkdirSync(ortDir, { recursive: true })
-const transformersRequire = createRequire(createRequire(import.meta.url).resolve('@huggingface/transformers'))
-for (const runtime of ORT_RUNTIMES) {
-  for (const ext of ['mjs', 'wasm']) {
-    const name = `${runtime}.${ext}`
-    const src = transformersRequire.resolve(`onnxruntime-web/${name}`)
-    const dest = join(ortDir, name)
-    const fresh = existsSync(dest) && readFileSync(dest).equals(readFileSync(src))
-    if (!fresh) copyFileSync(src, dest)
-    report.push({ file: `ort/${name}`, bytes: sizeOf(dest), how: fresh ? 'present' : 'copied from onnxruntime-web' })
-  }
-}
+report.push(...vendorOrt(ortDir))
 
 // The same file resolution transformers.js runs in the worker, for the same text-only config.
 const config = textOnly(await AutoConfig.from_pretrained(model))

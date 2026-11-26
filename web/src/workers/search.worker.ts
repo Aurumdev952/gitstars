@@ -6,6 +6,8 @@ import { EMPTY_RANKED, cosineAll, overlapAt10, topK, type LexicalRanked, type Ra
 
 export type InitOptions = {
   vectorsUrl: string
+  /** `assetBase()` from the page; a worker cannot tell whether it runs in the desktop app. */
+  assetBase: string
   n: number
   dim: number
   model: string
@@ -104,7 +106,7 @@ const api = {
   /** Idempotent: a second call joins the first load. */
   warm(onProgress: (p: ModelProgress) => void): Promise<{ device: Device }> {
     if (!opts) return Promise.reject(new Error('search worker used before init'))
-    embedder ??= loadEmbedder(opts.model, opts.dim, onProgress).then((e) => {
+    embedder ??= loadEmbedder(opts.model, opts.dim, opts.assetBase, onProgress).then((e) => {
       ready = e
       return e
     })

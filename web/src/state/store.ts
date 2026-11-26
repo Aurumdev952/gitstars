@@ -29,7 +29,7 @@ export type PlaySpeed = 0.5 | 1 | 2
 export type TimelineState = { open: boolean; playing: boolean; speed: PlaySpeed }
 
 /** At most one modal surface is open; Esc closes it before stepping out of the scene. */
-export type Overlay = 'none' | 'palette' | 'filters' | 'settings' | 'shortcuts'
+export type Overlay = 'none' | 'palette' | 'filters' | 'settings' | 'shortcuts' | 'pipeline'
 
 export type ModelStatus =
   | { state: 'idle' }

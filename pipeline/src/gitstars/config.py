@@ -56,6 +56,9 @@ class Paths:
 
 
 def github_token() -> str:
+    """`GITHUB_TOKEN` when set (the desktop app passes one in), else the gh CLI's login."""
+    if token := os.environ.get("GITHUB_TOKEN", "").strip():
+        return token
     return subprocess.run(["gh", "auth", "token"], capture_output=True, text=True, check=True).stdout.strip()
 
 

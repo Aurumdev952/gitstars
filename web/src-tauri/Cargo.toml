@@ -1,0 +1,33 @@
+[package]
+name = "gitstars"
+version = "0.1.0"
+description = "A 3D map of everything you have starred on GitHub"
+edition = "2021"
+publish = false
+
+[lib]
+name = "gitstars_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2.7.3", features = [] }
+
+[dependencies]
+tauri = { version = "2.12.4", features = [] }
+tauri-plugin-dialog = "2.8.3"
+tauri-plugin-opener = "2.7.2"
+serde = { version = "1.0.229", features = ["derive"] }
+serde_json = "1.0.154"
+tokio = { version = "1.54.0", features = ["process", "io-util", "fs", "sync", "time", "macros", "rt"] }
+reqwest = { version = "0.13.5", default-features = false, features = ["rustls", "http2", "json", "stream"] }
+futures-util = "0.3.34"
+rusqlite = { version = "0.40.2", features = ["bundled", "backup"] }
+keyring = "4.2.0"
+
+[target.'cfg(unix)'.dependencies]
+libc = "0.2.191"
+
+[profile.release]
+codegen-units = 1
+lto = true
+strip = true
